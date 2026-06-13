@@ -20,11 +20,20 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - Systemprompt ist aktiv und Jarvis erkennt seine Rolle in **PROJEKT JARVIS**.
 - Backup-, Restore- und Start-Dokumentation liegt unter `docs/backup-restore.md`.
 
+## v1.2 / Phase 2.5b – CEO Layer + Command Bus + Manus COO Vorbereitung
+
+- CEO ChatGPT Layer ist in der UI als aktive strategische Steuerungsschicht sichtbar.
+- Lokaler Command Bus erzeugt vorbereitende Task-Entwürfe aus einfachen Intent-/Routing-Regeln.
+- Rollenstatus ist ehrlich ausgewiesen: CEO ChatGPT und n8n Agent aktiv; COO Manus, CTO Codex und CSO Claude vorbereitet; CFO Finance geplant.
+- Menschliche Freigabe wird bei kritischen Begriffen markiert; der Mensch bleibt höchste Entscheidungsinstanz.
+- Keine echte externe Manus-, Claude-, CFO- oder Codex-Automation.
+- Jarvis-Web-Vertrag bleibt stabil:
+  - Request: `{ "chatInput": "..." }`
+  - Response: `{ "output": "..." }`
+- Dokumentation liegt unter `docs/phase-2-5-command-bus.md`.
+
 ## Nächster geplanter Schritt
 
-**Phase 2.5b – Command Bus + Manus COO Vorbereitung**
-
-- Command-Bus-Konzept vorbereiten.
-- Manus-COO-Rolle weiter operationalisieren.
-- Keine Änderung am bestehenden Frontend-Vertrag ohne expliziten Checkpoint.
-- Keine Secrets oder lokalen Credentials in GitHub speichern.
+- Command-Bus-Persistenz und Audit-Logik definieren.
+- UI-Flow für menschliche Freigabe ausarbeiten.
+- Sichere Integrationsverträge für spätere Agenten- und n8n-Automationen spezifizieren.

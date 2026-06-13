@@ -127,6 +127,15 @@ Die COO-/Projektmanager-Vorbereitung ist dokumentiert in:
 
 Diese Vorbereitung definiert nur Rollen, Arbeitsweisen und Akzeptanzkriterien. Es gibt keine echte Manus-API-Integration und keine echte LangGraph-Integration.
 
+
+## Phase 2.5b – CEO Layer + Command Bus + Manus COO Vorbereitung
+
+Phase 2.5b ergänzt Jarvis Pro um eine lokale Command-Bus-Vorbereitung im Frontend. CEO ChatGPT wird als strategische Steuerungsschicht sichtbar, während der Command Bus erkannte Nutzerabsichten als strukturierte Task-Entwürfe mit Rolle, Status, Priorität, Freigabebedarf und nächster Aktion anzeigt.
+
+Der Mensch bleibt höchste Entscheidungsinstanz. Phase 2.5b startet keine echte externe Manus-, Claude-, CFO- oder Codex-Automation und verändert den bestehenden n8n/Jarvis-Web-Chat-Vertrag nicht.
+
+Details: [`docs/phase-2-5-command-bus.md`](docs/phase-2-5-command-bus.md)
+
 ## Entwicklung
 
 ```bash
