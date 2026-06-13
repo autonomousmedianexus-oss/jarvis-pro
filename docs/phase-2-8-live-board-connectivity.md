@@ -54,3 +54,10 @@ Der Rückweg ist explizit modelliert:
 5. Menschliche Entscheidung: GO, Änderung oder Ablehnung
 
 Jarvis behauptet keine externe Ausführung, solange keine echte Verbindung vorhanden ist.
+
+
+## Phase 2.9 Anschluss
+
+Phase 2.9 baut auf dieser Board Chain auf und ergänzt GitHub/Codex als ersten echten Handoff-Kreislauf. Die sichtbare Firmenlogik bleibt Jarvis → CEO ChatGPT → COO Manus → CTO Codex → COO Manus → CEO ChatGPT → Jarvis → Mensch; GitHub, n8n, MCP und API bleiben technische Verbindungsschichten im Hintergrund.
+
+Der bestehende n8n Chat-Vertrag bleibt unverändert: Frontend sendet `{ chatInput: userMessage }` und liest `data.output`.
