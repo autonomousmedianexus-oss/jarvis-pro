@@ -101,3 +101,19 @@ Phase 2.5b löst keine externen Agenten aus. Es gibt keine echte Manus-, Claude-
 3. Manus-COO-Ansichten für Sprintplanung und Fortschrittsberichte vorbereiten.
 4. Sichere Integrationsverträge für Codex, Claude, CFO-Logik und n8n-Automationen definieren.
 5. Audit-Logik für Freigaben, Statuswechsel und ausgeführte Aktionen ergänzen.
+
+## Patch 1 – Command Bus Counter, Approval und Multi-Rollen-Erkennung
+
+Der lokale Command Bus kann jetzt mehrere Rollen in einer einzelnen Nachricht erkennen. Wenn ein Nutzer beispielsweise Manus und Codex im selben Kommando erwähnt, werden nach Möglichkeit mehrere getrennte Task-Entwürfe angelegt: ein COO-Manus-Entwurf für Sprint-/Operationsplanung und ein CTO-Codex-Entwurf für Code-, Repo- oder Prüfaufträge.
+
+Die UI zählt erkannte Aufgaben direkt aus der Task-Liste: `0 Aufgaben erkannt`, `1 Aufgabe erkannt` oder die jeweilige Mehrzahl. Im CEO-KOMMANDOBUS werden die letzten Aufgaben breiter und übersichtlicher als kurze Liste angezeigt, inklusive Task-ID, Rolle, Status, Priorität, Freigabebedarf und nächster Aktion.
+
+Der Command Bus führt weiterhin keine externen Aktionen selbst aus. Aufgaben für Codex, Manus, Claude, CFO oder n8n werden nur vorbereitet. Sobald ein Task auf externe Ausführung, eine vorbereitete Agentenrolle, `nextAction` mit Freigabebedarf oder einen Status mit menschlicher Entscheidung hinweist, bleibt `requiresHumanApproval` aktiv. Menschliche Freigabe ist Pflicht, bevor eine externe Aktion ausgelöst werden darf.
+
+## Lokale Jarvis Voice
+
+Die Jarvis-Sprachausgabe nutzt ausschließlich Browser- und System-Stimmen über die Web Speech API. Es werden keine externen TTS-Dienste, keine API-Keys und keine Secrets verwendet.
+
+Die lokale Voice-Konfiguration bevorzugt `de-DE`, wählt nach Möglichkeit eine hochwertige lokale deutsche Stimme und fällt sonst auf geeignete Systemstimmen zurück. Sprechtempo, Pitch und Lautstärke sind so eingestellt, dass Jarvis weniger langsam und weniger abgehackt wirkt. Lange Antworten werden in kleinere Satzabschnitte geteilt, und laufende Ausgabe wird vor einer neuen Antwort gestoppt, damit sich Sprachausgaben nicht überlagern.
+
+Die Qualität hängt vom verwendeten Browser und den lokal installierten Stimmen ab. Eine spätere Premium-TTS-Integration ist geplant, gehört aber nicht zu diesem Patch.

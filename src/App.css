@@ -883,3 +883,101 @@ body {
   letter-spacing: 1.3px;
   text-transform: uppercase;
 }
+
+@media (min-width: 1281px) {
+  .sidebar {
+    width: clamp(300px, 18vw, 360px);
+  }
+
+  .statusPanel {
+    width: clamp(360px, 24vw, 520px);
+  }
+
+  .app {
+    min-width: 0;
+  }
+}
+
+.commandBus strong {
+  color: #fde68a;
+  text-shadow: 0 0 14px rgba(250, 204, 21, 0.7);
+}
+
+.commandTaskCard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(250, 204, 21, 0.22);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(113, 63, 18, 0.2), rgba(2, 6, 23, 0.56)),
+    rgba(2, 6, 23, 0.42);
+}
+
+.commandTaskCard + .commandTaskCard {
+  margin-top: 10px;
+}
+
+.commandTaskCard span {
+  margin: 0;
+}
+
+.commandTaskCard .commandTaskId,
+.commandTaskCard span:last-child {
+  grid-column: 1 / -1;
+}
+
+.statusModule.primary small::after {
+  content: " · Browser/System-Stimme · ggf. einmal interagieren";
+}
+
+@media (min-width: 1500px) {
+  .chatBox {
+    padding-left: clamp(48px, 5vw, 110px);
+    padding-right: clamp(48px, 5vw, 110px);
+  }
+
+  .bubble.jarvis {
+    max-width: min(1180px, 94%);
+  }
+
+  .welcome {
+    max-width: 920px;
+  }
+}
+
+@media (max-width: 1280px) and (min-width: 861px) {
+  .app {
+    border-right: 0;
+  }
+
+  .statusPanel {
+    display: block;
+    width: 340px;
+  }
+
+  .sidebar {
+    width: 270px;
+  }
+}
+
+@media (max-width: 1080px) and (min-width: 861px) {
+  .statusPanel {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .commandTaskCard {
+    grid-template-columns: 1fr;
+  }
+
+  .inputArea {
+    flex-direction: column;
+  }
+
+  .inputArea button {
+    min-height: 48px;
+  }
+}

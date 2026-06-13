@@ -49,35 +49,50 @@ const COMMAND_MATCHERS = [
   },
 ];
 
-const HUMAN_APPROVAL_TERMS = ["entscheidung", "freigabe", "kritisch", "go"];
+const HUMAN_APPROVAL_TERMS = ["entscheidung", "freigabe", "kritisch", "go", "approval", "bestätigung"];
+const EXTERNAL_EXECUTION_ROLES = new Set([
+  "CTO_CODEX",
+  "COO_MANUS",
+  "CSO_CLAUDE",
+  "CFO_FINANCE",
+  "N8N_AUTOMATION",
+]);
+
+const VOICE_CONFIG = {
+  preferredLanguage: "de-DE",
+  rate: 1.18,
+  pitch: 0.86,
+  volume: 0.92,
+  fallbackVoiceStrategy: "prefer-local-german-then-premium-system-voice",
+};
 
 function includesAny(text, terms) {
   return terms.some((term) => text.includes(term));
 }
 
-function createCommandFromMessage(sourceMessage, commandNumber) {
-  const normalized = sourceMessage.toLowerCase();
-  const matchedRoute = COMMAND_MATCHERS.find((route) =>
-    includesAny(normalized, route.terms),
+function commandNeedsApproval(route, normalized) {
+  if (!route) return includesAny(normalized, HUMAN_APPROVAL_TERMS);
+
+  const approvalByText = includesAny(normalized, HUMAN_APPROVAL_TERMS);
+  const approvalByNextAction = /freigabe|approval|mensch|owner|warten|nicht ausführen/i.test(
+    route.nextAction,
   );
-  const requiresHumanApproval = includesAny(normalized, HUMAN_APPROVAL_TERMS);
+  const preparesExternalAction = EXTERNAL_EXECUTION_ROLES.has(route.role);
 
-  if (!matchedRoute && !requiresHumanApproval) return null;
+  return approvalByText || approvalByNextAction || preparesExternalAction;
+}
 
-  const assignedRole = requiresHumanApproval && !matchedRoute ? "HUMAN_OWNER" : matchedRoute.role;
-  const route = matchedRoute || {
-    category: "operations",
-    priority: "hoch",
-    nextAction: "Entscheidungsvorlage für den menschlichen Owner vorbereiten.",
-  };
+function createCommandTask(sourceMessage, route, commandNumber, taskOffset, normalized) {
+  const requiresHumanApproval = commandNeedsApproval(route, normalized);
+  const sequence = commandNumber + taskOffset;
 
   return {
-    id: `TASK-${String(commandNumber).padStart(3, "0")}`,
-    title: `Auftrag aus Nutzerkommando #${String(commandNumber).padStart(3, "0")}`,
+    id: `TASK-${String(sequence).padStart(3, "0")}`,
+    title: `Auftrag aus Nutzerkommando #${String(sequence).padStart(3, "0")}`,
     description: sourceMessage,
     sourceMessage,
-    assignedRole,
-    roleLabel: ROLES[assignedRole].label,
+    assignedRole: route.role,
+    roleLabel: ROLES[route.role].label,
     priority: requiresHumanApproval ? "hoch" : route.priority,
     status: requiresHumanApproval ? "needs_approval" : "draft",
     requiresHumanApproval,
@@ -85,6 +100,39 @@ function createCommandFromMessage(sourceMessage, commandNumber) {
     createdAt: new Date().toISOString(),
     category: route.category,
   };
+}
+
+function createCommandsFromMessage(sourceMessage, commandNumber) {
+  const normalized = sourceMessage.toLowerCase();
+  const matchedRoutes = COMMAND_MATCHERS.filter((route) =>
+    includesAny(normalized, route.terms),
+  );
+  const requiresHumanApproval = includesAny(normalized, HUMAN_APPROVAL_TERMS);
+
+  if (matchedRoutes.length === 0 && !requiresHumanApproval) return [];
+
+  if (matchedRoutes.length === 0) {
+    return [
+      {
+        id: `TASK-${String(commandNumber).padStart(3, "0")}`,
+        title: `Auftrag aus Nutzerkommando #${String(commandNumber).padStart(3, "0")}`,
+        description: sourceMessage,
+        sourceMessage,
+        assignedRole: "HUMAN_OWNER",
+        roleLabel: ROLES.HUMAN_OWNER.label,
+        priority: "hoch",
+        status: "needs_approval",
+        requiresHumanApproval: true,
+        nextAction: "Entscheidungsvorlage für den menschlichen Owner vorbereiten.",
+        createdAt: new Date().toISOString(),
+        category: "operations",
+      },
+    ];
+  }
+
+  return matchedRoutes.map((route, index) =>
+    createCommandTask(sourceMessage, route, commandNumber, index, normalized),
+  );
 }
 
 function formatStatus(status) {
@@ -100,39 +148,102 @@ function formatStatus(status) {
   return labels[status] || status;
 }
 
+
+function splitSpeechIntoChunks(text) {
+  return String(text)
+    .replace(/\s+/g, " ")
+    .match(/[^.!?;:]+[.!?;:]?|[^.!?;:]+$/g)
+    ?.map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .reduce((chunks, sentence) => {
+      const last = chunks.at(-1);
+      if (last && `${last} ${sentence}`.length <= 220) {
+        chunks[chunks.length - 1] = `${last} ${sentence}`;
+      } else {
+        chunks.push(sentence);
+      }
+      return chunks;
+    }, []) || [];
+}
+
+function scoreVoice(voice) {
+  const name = voice.name.toLowerCase();
+  const lang = voice.lang.toLowerCase();
+  let score = 0;
+
+  if (lang === "de-de") score += 70;
+  else if (lang.startsWith("de")) score += 55;
+  else if (lang.startsWith("en")) score += 25;
+
+  if (voice.localService) score += 12;
+  if (/premium|enhanced|natural|neural|google|microsoft|apple|anna|katja|helena|markus/.test(name)) {
+    score += 18;
+  }
+
+  return score;
+}
+
+function selectJarvisVoice(voices) {
+  return [...voices].sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] || null;
+}
 function App() {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState("VOICE STANDBY");
+  const [voiceStatus, setVoiceStatus] = useState("VOICE AKTIV");
   const [time, setTime] = useState(new Date());
   const [commands, setCommands] = useState([]);
   const chatEndRef = useRef(null);
+  const voiceQueueRef = useRef([]);
+  const selectedVoiceRef = useRef(null);
+  const sendMessageRef = useRef(null);
   const latestCommand = commands.at(-1);
+  const recentCommands = commands.slice(-4).reverse();
 
   const WEBHOOK_URL =
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
 
-  useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    startWakeWordListener();
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat, loading]);
-
   const speak = useCallback((text) => {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
+    if (!("speechSynthesis" in window) || !text) {
+      setVoiceStatus("VOICE NICHT VERFÜGBAR");
+      return;
+    }
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "de-DE";
-    utterance.rate = 1;
-    utterance.pitch = 0.9;
+    try {
+      window.speechSynthesis.cancel();
+      voiceQueueRef.current = splitSpeechIntoChunks(text);
 
-    window.speechSynthesis.speak(utterance);
+      const speakNextChunk = () => {
+        const nextChunk = voiceQueueRef.current.shift();
+        if (!nextChunk) {
+          setVoiceStatus("VOICE AKTIV");
+          return;
+        }
+
+        const voices = window.speechSynthesis.getVoices();
+        selectedVoiceRef.current = selectedVoiceRef.current || selectJarvisVoice(voices);
+
+        const utterance = new SpeechSynthesisUtterance(nextChunk);
+        utterance.lang = selectedVoiceRef.current?.lang || VOICE_CONFIG.preferredLanguage;
+        utterance.voice = selectedVoiceRef.current;
+        utterance.rate = VOICE_CONFIG.rate;
+        utterance.pitch = VOICE_CONFIG.pitch;
+        utterance.volume = VOICE_CONFIG.volume;
+        utterance.onstart = () => setVoiceStatus("SPRICHT GERADE");
+        utterance.onend = speakNextChunk;
+        utterance.onerror = () => {
+          voiceQueueRef.current = [];
+          setVoiceStatus("VOICE BLOCKIERT – BITTE EINMAL KLICKEN");
+        };
+
+        window.speechSynthesis.speak(utterance);
+      };
+
+      speakNextChunk();
+    } catch (error) {
+      console.error(error);
+      setVoiceStatus("VOICE BLOCKIERT – BITTE EINMAL KLICKEN");
+    }
   }, []);
 
   const startWakeWordListener = useCallback(() => {
@@ -159,7 +270,7 @@ function App() {
         const command = transcript.replace("hallo jarvis", "").trim();
 
         if (command) {
-          sendMessage(command);
+          sendMessageRef.current?.(command);
         } else {
           speak("Ja, Argo?");
         }
@@ -185,15 +296,52 @@ function App() {
     }
   }, [speak]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    const wakeTimer = window.setTimeout(startWakeWordListener, 0);
+    return () => {
+      clearInterval(timer);
+      window.clearTimeout(wakeTimer);
+      window.speechSynthesis?.cancel();
+    };
+  }, [startWakeWordListener]);
+
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) {
+      return undefined;
+    }
+
+    const refreshVoices = () => {
+      selectedVoiceRef.current = selectJarvisVoice(window.speechSynthesis.getVoices());
+      setVoiceStatus((current) =>
+        current === "VOICE NICHT VERFÜGBAR" ? "VOICE AKTIV" : current,
+      );
+    };
+
+    const voiceTimer = window.setTimeout(refreshVoices, 0);
+    window.speechSynthesis.onvoiceschanged = refreshVoices;
+
+    return () => {
+      window.clearTimeout(voiceTimer);
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat, loading]);
+
+
+
   async function sendMessage(customMessage) {
     const userMessage = customMessage || message;
     if (!userMessage.trim() || loading) return;
 
     setMessage("");
     setChat((old) => [...old, { role: "user", text: userMessage }]);
-    const command = createCommandFromMessage(userMessage, commands.length + 1);
-    if (command) {
-      setCommands((old) => [...old, command]);
+    const draftedCommands = createCommandsFromMessage(userMessage, commands.length + 1);
+    if (draftedCommands.length > 0) {
+      setCommands((old) => [...old, ...draftedCommands]);
     }
     setLoading(true);
 
@@ -219,6 +367,10 @@ function App() {
 
     setLoading(false);
   }
+
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  });
 
   function handleKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -415,18 +567,24 @@ function App() {
 
         <div className="statusModule commandBus">
           <p>CEO Command Bus</p>
-          <strong>{commands.length} Tasks erkannt</strong>
+          <strong>
+            {commands.length} {commands.length === 1 ? "Aufgabe" : "Aufgaben"} erkannt
+          </strong>
           {latestCommand ? (
             <div className="commandDetails">
-              <span>{latestCommand.id}</span>
-              <span>Rolle: {latestCommand.roleLabel}</span>
-              <span>Status: {formatStatus(latestCommand.status)}</span>
-              <span>Priorität: {latestCommand.priority}</span>
-              <span>Freigabe: {latestCommand.requiresHumanApproval ? "ja" : "nein"}</span>
-              <span>Nächste Aktion: {latestCommand.nextAction}</span>
+              {recentCommands.map((command) => (
+                <article className="commandTaskCard" key={command.id}>
+                  <span className="commandTaskId">{command.id}</span>
+                  <span>Rolle: {command.roleLabel}</span>
+                  <span>Status: {formatStatus(command.status)}</span>
+                  <span>Priorität: {command.priority}</span>
+                  <span>Freigabe: {command.requiresHumanApproval ? "ja" : "nein"}</span>
+                  <span>Nächste Aktion: {command.nextAction}</span>
+                </article>
+              ))}
             </div>
           ) : (
-            <small>Noch kein lokaler Command-Bus-Task erkannt.</small>
+            <small>0 Aufgaben erkannt · Noch kein lokaler Command-Bus-Task.</small>
           )}
         </div>
 
