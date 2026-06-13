@@ -104,6 +104,20 @@ Erwartetes Antwortschema:
 }
 ```
 
+
+## Stable Checkpoint: Jarvis Pro Interface v1.1 – AI Agent Restore
+
+Der stabile Restore-Stand v1.1 ist dokumentiert in [`docs/backup-restore.md`](docs/backup-restore.md). Dieser Checkpoint beschreibt, welche Teile in GitHub gespeichert sind, welche Daten lokal in n8n bleiben und wie Jarvis nach Neustart oder Workflow-Verlust wiederhergestellt wird.
+
+Kurzanleitung:
+
+1. n8n starten: `powershell -ExecutionPolicy Bypass -File scripts/start-jarvis.ps1` oder manuell mit `npx n8n start`.
+2. Jarvis-Web starten: das Start-Skript startet Vite automatisch; alternativ `npm run dev -- --host 127.0.0.1 --port 5173`.
+3. Workflow **Jarvis Pro Interface v1** in n8n prüfen, OpenAI-Credential lokal verbinden und Workflow aktivieren/veröffentlichen.
+4. Jarvis-Web unter `http://localhost:5173` öffnen und `Hallo Jarvis` senden.
+
+Weitere Checkpoints stehen in [`docs/phase-checkpoints.md`](docs/phase-checkpoints.md).
+
 ## Phase 2.5 Project Manager Vorbereitung
 
 Die COO-/Projektmanager-Vorbereitung ist dokumentiert in:
