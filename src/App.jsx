@@ -1,7 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import "./App.css";
 
+const BOARD_AGENTS = [
+  "HUMAN_OWNER",
+  "JARVIS_INTERFACE",
+  "CEO_CHATGPT",
+  "COO_MANUS",
+  "CTO_CODEX",
+  "CSO_CLAUDE",
+  "CFO_FINANCE",
+  "N8N_AUTOMATION",
+];
+
 const ROLES = {
+  JARVIS_INTERFACE: { label: "Jarvis", state: "INTERFACE AKTIV" },
   CEO_CHATGPT: { label: "CEO ChatGPT", state: "AKTIV" },
   COO_MANUS: { label: "COO Manus", state: "DELEGATION AKTIV" },
   CTO_CODEX: { label: "CTO Codex", state: "VORBEREITET" },
@@ -50,7 +62,75 @@ const MANUS_WEB_FORBIDDEN_ACTIONS = [
   "Keine externe Manus-Ausführung behaupten, solange keine echte Integration verbunden ist",
 ];
 
+const CONNECTION_STATUS = {
+  CEO_CHATGPT: {
+    component: "CEO ChatGPT / OpenAI",
+    status: "connected",
+    possible: "CEO-Entscheidung lokal erzeugen; n8n kann ChatGPT/OpenAI-Antworten liefern, wenn lokale Credentials in n8n gesetzt sind.",
+    missing: "Serverseitige OpenAI-Orchestrator-API außerhalb des bestehenden n8n-Chats ist nicht separat konfiguriert.",
+    allowedAfterGo: "Strategische Bewertung, Priorisierung, Risiko- und Freigabeprüfung.",
+    blocked: "Keine Secrets im Frontend; keine bindenden Aktionen ohne Owner-GO.",
+  },
+  COO_MANUS: {
+    component: "COO Manus",
+    status: "local_active",
+    possible: "Lokale Manus-Aufträge, Research-Briefings, Sprintpläne und operative Review-Templates erstellen.",
+    missing: "Manus API/Webhook/MCP nicht konfiguriert; Login nur manuell nach GO.",
+    allowedAfterGo: "Research-GO und Login-GO lokal markieren; externes Handoff nur bei später verbundener Integration.",
+    blocked: "Keine externe Manus-Ausführung, kein Login und keine Web-Aktion aus Jarvis heraus.",
+  },
+  CTO_CODEX: {
+    component: "CTO Codex",
+    status: "prepared",
+    possible: "Codex-Auftrag und GitHub-Issue-Draft kopierbar vorbereiten.",
+    missing: "Codex direkte Ausführung nicht verbunden; kein Workflow-Trigger konfiguriert.",
+    allowedAfterGo: "Codex-Handoff lokal markieren und Auftrag manuell übergeben.",
+    blocked: "Kein Merge, Deploy, externer Commit oder PR aus der UI.",
+  },
+  GITHUB: {
+    component: "GitHub",
+    status: "needs_secret",
+    possible: "Repo-Kontext und Issue-Draft lokal vorbereiten.",
+    missing: "GitHub Issue/PR API nicht verbunden; serverseitiges Token/Connector fehlt.",
+    allowedAfterGo: "Issue-Draft kopieren; echte Issue-Erstellung erst mit sicherem Backend-Connector.",
+    blocked: "Keine Issue/PR API-Aktion aus dem Frontend; kein Merge/Deploy.",
+  },
+  N8N_AUTOMATION: {
+    component: "n8n",
+    status: "connected",
+    possible: "Bestehender Chat-Webhook aktiv vorbereitet; Request bleibt { chatInput: userMessage }, Response data.output.",
+    missing: "Separater Execution-Handoff-Workflow ist nur geplant/dokumentiert.",
+    allowedAfterGo: "Chat-Orchestrierung; spätere Execution-Tasks nur in separatem Workflow mit Secrets in n8n.",
+    blocked: "Bestehenden Chat-Vertrag nicht brechen; keine Secrets committen.",
+  },
+  MCP_GATEWAY: {
+    component: "MCP Gateway / Tool Layer",
+    status: "mcp_ready",
+    possible: "Capability Detection, lokale Task-State-Tools und Handoff-Drafts modelliert.",
+    missing: "Keine externe MCP-Server-Ausführung im Frontend verbunden.",
+    allowedAfterGo: "Task-State exportieren und Freigaben markieren.",
+    blocked: "Keine verdeckte externe Tool-Ausführung.",
+  },
+  LOCAL_TASK_STORE: {
+    component: "Local Task Store",
+    status: "local_active",
+    possible: "Executive Decisions, Board Chains, Command Tasks und Approvals in localStorage speichern/exportieren.",
+    missing: "Keine serverseitige Datenbank; Browserdaten können lokal gelöscht werden.",
+    allowedAfterGo: "Export/Clear durch UI-Aktion.",
+    blocked: "Keine Secrets speichern.",
+  },
+};
+
 const TOOL_REGISTRY = [
+  { name: "detectCapabilities", mode: "local" },
+  { name: "createManusTask", mode: "prepared" },
+  { name: "createCodexTask", mode: "prepared" },
+  { name: "createGitHubIssueDraft", mode: "prepared" },
+  { name: "markHumanApproval", mode: "local" },
+  { name: "prepareN8nExecution", mode: "api_ready" },
+  { name: "readTaskState", mode: "local" },
+  { name: "writeTaskState", mode: "local" },
+  { name: "exportTaskState", mode: "local" },
   { name: "create_manus_web_research_task", mode: "prepared" },
   { name: "copy_manus_web_research_brief", mode: "local" },
   { name: "mark_research_approved", mode: "local" },
@@ -187,6 +267,8 @@ function generateExecutiveDecision(sourceMessage, context = {}) {
     strategicAssessment: operational && technical
       ? "CEO Assessment: operative Planung an Manus, technische Prüfung an Codex. Beide bleiben unter CEO-Steuerung und warten auf menschliches GO."
       : `CEO Assessment: ${routeText} als zuständige Rolle(n) vorbereiten; keine kritische Aktion ohne menschliche Freigabe.`,
+    boardFlow: createBoardExecutionChain(recommendedRoles, requiresHumanApproval),
+    involvedAgents: recommendedRoles,
     recommendedRoles,
     priority,
     riskLevel,
@@ -194,6 +276,7 @@ function generateExecutiveDecision(sourceMessage, context = {}) {
     approvalReason: requiresHumanApproval
       ? "Human Approval First: lokale Delegation/Prompts sind erlaubt, externe Ausführung oder Code-/Automationsänderungen benötigen menschliches GO."
       : "Kein kritischer externer Ausführungsschritt erkannt; CEO Layer hält trotzdem die Freigabe-Kontrolle sichtbar.",
+    nextStep: "Board Execution Chain starten: Jarvis → CEO → Manus → Codex → Manus → CEO → Jarvis → Mensch.",
     nextExecutiveAction: "Command Bus Task(s) strukturieren, Delegationsbriefings ablegen und Freigabe durch den Menschen abwarten.",
     createdAt: new Date().toISOString(),
   };
@@ -312,6 +395,55 @@ Tests: npm run lint, npm run build, Secret Scan.
 Secret-Regeln: Keine API-Keys, Passwörter oder Tokens einfügen; keine Secrets ins Frontend; keine geschützten Inhalte kopieren; eigene Umsetzung bauen.
 Nach Umsetzung: Commit + PR erstellen, nicht mergen.
 Warten auf menschliche Prüfung: Keine Änderung, kein Commit, kein PR ohne menschliches GO.`;
+}
+
+function createBoardExecutionChain(involvedAgents = [], requiresHumanApproval = true) {
+  const hasManus = involvedAgents.includes("COO_MANUS");
+  const hasCodex = involvedAgents.includes("CTO_CODEX");
+  return [
+    { step: 1, title: "Auftrag empfangen", agent: "JARVIS_INTERFACE", status: "done", current: false, next: false, approvalRequired: false, connection: "local_active" },
+    { step: 2, title: "Ziel, Risiko, Priorität bewerten", agent: "CEO_CHATGPT", status: "active", current: true, next: false, approvalRequired: requiresHumanApproval, connection: CONNECTION_STATUS.CEO_CHATGPT.status },
+    { step: 3, title: hasManus ? "Operativen Plan / Research erstellen" : "Operativen Plan vorbereiten", agent: "COO_MANUS", status: hasManus ? "ready" : "prepared", current: false, next: true, approvalRequired: true, connection: CONNECTION_STATUS.COO_MANUS.status },
+    { step: 4, title: hasCodex ? "Technische Umsetzung / PR-Handoff vorbereiten" : "Technisches Handoff vorbereiten", agent: "CTO_CODEX", status: hasCodex ? "ready" : "prepared", current: false, next: false, approvalRequired: true, connection: CONNECTION_STATUS.CTO_CODEX.status },
+    { step: 5, title: "Ergebnis operativ prüfen", agent: "COO_MANUS", status: "prepared", current: false, next: false, approvalRequired: false, connection: CONNECTION_STATUS.COO_MANUS.status },
+    { step: 6, title: "Final Assessment und Empfehlung", agent: "CEO_CHATGPT", status: "prepared", current: false, next: false, approvalRequired: false, connection: CONNECTION_STATUS.CEO_CHATGPT.status },
+    { step: 7, title: "Human Report anzeigen", agent: "JARVIS_INTERFACE", status: "prepared", current: false, next: false, approvalRequired: false, connection: "local_active" },
+    { step: 8, title: "Freigabe / Änderung / Ablehnung", agent: "HUMAN_OWNER", status: "waiting", current: false, next: false, approvalRequired: true, connection: "local_active" },
+  ];
+}
+
+function createGitHubIssueDraft(task, executiveDecision, codexPrompt) {
+  if (!task) return "";
+  return `Titel: ${task.title} – ${task.roleLabel} Handoff
+
+CEO-Kontext:
+${executiveDecision?.intentSummary || "Keine Executive Decision"}
+${executiveDecision?.strategicAssessment || ""}
+
+Ziel:
+${task.description}
+
+Codex-Auftrag:
+${codexPrompt}
+
+Sicherheitsregeln:
+- Keine Secrets oder API-Keys committen.
+- Kein Merge, kein Deploy, keine produktive Aktion ohne separates menschliches GO.
+- n8n-Vertrag unverändert lassen: Frontend sendet { chatInput: userMessage }, Frontend liest data.output.
+
+Tests:
+- npm run lint
+- npm run build
+- Secret Scan`;
+}
+
+function createReturnPathReport(task, executiveDecision) {
+  return {
+    codexResultReport: { summary: "Noch kein externes Codex-Ergebnis verbunden.", changedFiles: [], tests: [], risks: ["Externe Codex-Ausführung nicht verbunden"], openQuestions: ["Soll der vorbereitete Auftrag manuell an Codex übergeben werden?"], prInfo: "Kein PR-Status verbunden" },
+    manusOperationalReview: { matchesPlan: "offen", missingItems: ["Manus-Report fehlt"], blockers: ["Manus API/Webhook/MCP nicht konfiguriert"], recommendation: "Research zuerst manuell/extern nach GO durchführen." },
+    ceoFinalAssessment: { riskLevel: executiveDecision?.riskLevel || "mittel", recommendation: "Erst Handoff prüfen, dann menschliches GO einholen.", approveRecommendation: false, requiresHumanDecision: true },
+    jarvisHumanReport: { whatHappened: task ? `${task.roleLabel}-Handoff wurde lokal vorbereitet.` : "Noch kein Task vorbereitet.", risks: "Keine externe Ausführung erfolgt; Verbindungen fehlen teilweise.", recommendation: "Freigabe für Research oder Codex-Handoff bewusst setzen.", requiredDecision: "GO / Änderung / Ablehnung", possibleActions: ["Research-GO", "Login-GO", "Codex-Handoff-GO", "Ablehnen"] },
+  };
 }
 
 function generateExecutiveSummary(executiveDecision, tasks = []) {
@@ -436,11 +568,11 @@ function App() {
   const [ttsProvider, setTtsProvider] = useState("OpenAI");
   const [voiceFirst, setVoiceFirst] = useState(true);
   const [expandedMessages, setExpandedMessages] = useState({});
-  const [localApprovals, setLocalApprovals] = useState({});
+  const [localApprovals, setLocalApprovals] = useState(() => JSON.parse(localStorage.getItem("jarvis.approvals") || "{}"));
   const [copyNotice, setCopyNotice] = useState("");
   const [time, setTime] = useState(new Date());
-  const [commands, setCommands] = useState([]);
-  const [executiveDecisions, setExecutiveDecisions] = useState([]);
+  const [executiveDecisions, setExecutiveDecisions] = useState(() => JSON.parse(localStorage.getItem("jarvis.executiveDecisions") || "[]"));
+  const [commands, setCommands] = useState(() => JSON.parse(localStorage.getItem("jarvis.commandTasks") || "[]"));
   const chatEndRef = useRef(null);
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
@@ -457,6 +589,9 @@ function App() {
   const latestManusBriefing = latestManusTask && latestManusDecision ? generateManusBriefing(latestManusTask, latestManusDecision, { tasks: commands }) : "";
   const latestCodexPrompt = latestCodexTask && latestCodexDecision ? generateCodexPrompt(latestCodexTask, latestCodexDecision, { tasks: commands }) : "";
   const latestExecutiveSummary = latestDecision ? generateExecutiveSummary(latestDecision, commands.filter((task) => task.executiveDecisionId === latestDecision.id)) : "";
+  const activeBoardChain = latestDecision?.boardFlow || createBoardExecutionChain([], false);
+  const latestGitHubIssueDraft = latestCodexTask && latestCodexDecision ? createGitHubIssueDraft(latestCodexTask, latestCodexDecision, latestCodexPrompt) : "";
+  const latestReturnPathReport = createReturnPathReport(latestCodexTask || latestManusTask, latestDecision);
   const voiceStatusLabel = VOICE_STATUS_LABELS[voiceStatus] || voiceStatus;
 
   const copyToClipboard = async (text, notice) => {
@@ -642,6 +777,18 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat, loading]);
 
+  useEffect(() => {
+    localStorage.setItem("jarvis.executiveDecisions", JSON.stringify(executiveDecisions));
+  }, [executiveDecisions]);
+
+  useEffect(() => {
+    localStorage.setItem("jarvis.commandTasks", JSON.stringify(commands));
+  }, [commands]);
+
+  useEffect(() => {
+    localStorage.setItem("jarvis.approvals", JSON.stringify(localApprovals));
+  }, [localApprovals]);
+
 
 
   async function sendMessage(customMessage) {
@@ -711,6 +858,9 @@ function App() {
             setCommands([]);
             setExecutiveDecisions([]);
             setLocalApprovals({});
+            localStorage.removeItem("jarvis.executiveDecisions");
+            localStorage.removeItem("jarvis.commandTasks");
+            localStorage.removeItem("jarvis.approvals");
           }}
         >
           + Neuer Chat
@@ -788,7 +938,7 @@ function App() {
           </div>
 
           <h1>JARVIS PRO</h1>
-          <p>CEO CHATGPT LAYER · COMMAND BUS · HUMAN APPROVAL FIRST</p>
+          <p>BOARD EXECUTION CHAIN · HUMAN APPROVAL FIRST</p>
         </header>
 
         <section className="chatBox">
@@ -907,22 +1057,13 @@ function App() {
           ) : <small>Noch keine Executive Decision.</small>}
         </div>
 
-        <div className="statusModule integrationMap">
-          <p>Agenten-Brücke / Integrationsstatus</p>
-          <strong>LOCAL BRIDGE ACTIVE</strong>
+<div className="statusModule integrationMap">
+          <p>Live Connectivity</p>
+          <strong>{BOARD_AGENTS.length} BOARD-ROLLEN · VERBINDUNGEN EHRLICH GEPRÜFT</strong>
           <ul>
-            <li>CEO ChatGPT Layer: aktiv</li>
-            <li>OpenAI: lokal konfiguriert / n8n-Antworten</li>
-            <li>n8n: aktiv</li>
-            <li>Voice/TTS: {ttsProvider} oder Browser Fallback</li>
-            <li>Command Bus: aktiv</li>
-            <li>Manus Web Operator: vorbereitet; externe Ausführung nicht verbunden</li>
-            <li>MCP Gateway: vorbereitet; Tool Registry lokal sichtbar</li>
-            <li>Browser/Web-Login: nur mit expliziter Freigabe</li>
-            <li>Manus COO: lokale Delegation aktiv, externe Integration nicht verbunden</li>
-            <li>Codex CTO: PR-/Prompt-Workflow vorbereitet, direkte externe Ausführung nicht verbunden</li>
-            <li>GitHub: Repo-Kontext vorbereitet</li>
-            <li>Human Approval: aktiv</li>
+            {Object.entries(CONNECTION_STATUS).map(([key, item]) => (
+              <li key={key}><b>{item.component}: {item.status}</b><br />Möglich: {item.possible}<br />Fehlt: {item.missing}<br />Nach GO: {item.allowedAfterGo}<br />Blockiert: {item.blocked}</li>
+            ))}
           </ul>
         </div>
 
@@ -934,6 +1075,21 @@ function App() {
           <ul>
             {APPROVAL_LEVELS.map((level) => <li key={level.id}>{level.label}: {level.rule}</li>)}
           </ul>
+        </div>
+
+        <div className="statusModule boardChain">
+          <p>Board Execution Chain</p>
+          <strong>{activeBoardChain.find((step) => step.current)?.title || "bereit"}</strong>
+          <div className="chainList">
+            {activeBoardChain.map((step) => (
+              <article className={`chainStep ${step.current ? "current" : ""} ${step.next ? "next" : ""}`} key={`${step.step}-${step.agent}`}>
+                <span>{step.step}. {step.title}</span>
+                <small>Zuständig: {ROLES[step.agent]?.label || step.agent}</small>
+                <small>Status: {step.status} · Nächster Schritt: {step.next ? "ja" : "nein"}</small>
+                <small>Freigabe erforderlich: {step.approvalRequired ? "ja" : "nein"} · Verbindung: {step.connection}</small>
+              </article>
+            ))}
+          </div>
         </div>
 
         <div className="statusModule commandBus">
@@ -987,6 +1143,9 @@ function App() {
               <button className="miniAction" onClick={() => copyToClipboard(generateCodexPrompt(latestManusTask, latestManusDecision, { tasks: commands }), "Codex-Folgeauftrag aus Manus kopiert")}>
                 Codex-Folgeauftrag erzeugen/kopieren
               </button>
+              <button className="miniAction" disabled title={CONNECTION_STATUS.COO_MANUS.missing}>
+                Extern übergeben deaktiviert
+              </button>
               <small>{localApprovals[latestManusTask.id] ? "Status lokal geändert – keine externe Ausführung gestartet." : "Status: wartet auf Freigabe"}</small>
             </div>
           ) : (
@@ -1010,13 +1169,31 @@ function App() {
                 Codex-Auftrag kopieren
               </button>
               <button className="miniAction" onClick={() => markTask(latestCodexTask.id, "approved_local")}>
-                Freigabe lokal markieren
+                Codex-Handoff-GO lokal markieren
               </button>
+              <details className="briefingBox">
+                <summary>GitHub Issue Draft anzeigen</summary>
+                <pre className="promptBox">{latestGitHubIssueDraft}</pre>
+              </details>
+              <button className="miniAction" onClick={() => copyToClipboard(latestGitHubIssueDraft, "GitHub Issue Draft kopiert")}>
+                GitHub Issue Draft kopieren
+              </button>
+              <button className="miniAction" disabled title={CONNECTION_STATUS.GITHUB.missing}>GitHub Issue erstellen deaktiviert</button>
+              <button className="miniAction" disabled title={CONNECTION_STATUS.CTO_CODEX.missing}>PR-Status prüfen deaktiviert</button>
             </div>
           ) : <small>Kein Codex-Task erkannt · Folgeauftrag wird bei Technik-/Codex-Aufgaben erzeugt.</small>}
         </div>
 
         {copyNotice && <div className="copyToast">{copyNotice}</div>}
+
+        <div className="statusModule returnPath">
+          <p>Rückweg / Human Report</p>
+          <strong>{latestReturnPathReport.jarvisHumanReport.requiredDecision}</strong>
+          <small>{latestReturnPathReport.jarvisHumanReport.whatHappened}</small>
+          <small>CEO Empfehlung: {latestReturnPathReport.ceoFinalAssessment.recommendation}</small>
+          <small>Manus Review: {latestReturnPathReport.manusOperationalReview.recommendation}</small>
+          <small>Aktionen: {latestReturnPathReport.jarvisHumanReport.possibleActions.join(" · ")}</small>
+        </div>
 
         <div className="statusModule">
           <p>Chat Session</p>
@@ -1025,11 +1202,19 @@ function App() {
         </div>
 
         <div className="statusModule integrationMap">
-          <p>MCP Gateway / Tool Registry</p>
+          <p>MCP/API Tool Layer</p>
           <strong>PREPARED · MCP READY</strong>
           <ul>
             {TOOL_REGISTRY.map((tool) => <li key={tool.name}>{tool.name}: {tool.mode}</li>)}
           </ul>
+        </div>
+
+        <div className="statusModule taskStore">
+          <p>Local Task Store</p>
+          <strong>{CONNECTION_STATUS.LOCAL_TASK_STORE.status}</strong>
+          <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify({ executiveDecisions, boardChains: executiveDecisions.map((decision) => decision.boardFlow), commandTasks: commands, approvals: localApprovals }, null, 2), "Task State exportiert")}>Export Task State</button>
+          <button className="miniAction" onClick={() => { setCommands([]); setExecutiveDecisions([]); setLocalApprovals({}); localStorage.removeItem("jarvis.executiveDecisions"); localStorage.removeItem("jarvis.commandTasks"); localStorage.removeItem("jarvis.approvals"); }}>Clear Task State</button>
+          <small>Speichert keine Secrets; nur lokale Board-/Task-/Approval-Daten.</small>
         </div>
 
         <div className="statusModule futureSystems">

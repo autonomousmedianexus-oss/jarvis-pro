@@ -69,3 +69,13 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - MCP Gateway / Tool Registry für Manus-Web-Operator-Tools vorbereitet; externe Manus-Ausführung bleibt ehrlich als nicht verbunden markiert.
 - Human Approval First erweitert: Research-only, Login, External Action, Code Generation, Commit/PR und Merge/Deploy sind getrennte Freigabeebenen.
 - n8n-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.
+
+
+## v1.6 / Phase 2.8 — Live Board-Agent Connectivity
+
+- Board Execution Chain sichtbar eingeführt: Jarvis → CEO ChatGPT → COO Manus → CTO Codex → COO Manus Review → CEO ChatGPT → Jarvis → Mensch.
+- Command-Bus-Zähler wird aus exakt derselben sichtbaren Task-Liste berechnet, die gerendert wird.
+- Live Connectivity Map zeigt pro Komponente `connected`, `local_active`, `prepared`, `mcp_ready`, `api_ready`, `needs_secret`, `needs_login`, `unavailable` oder `failed` und erklärt möglich/fehlend/blockiert.
+- Local Task Store nutzt localStorage für Executive Decisions, Board Chains, Command Tasks und Approval States ohne Secrets.
+- n8n-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.
+- Externe Manus-/Codex-/GitHub-Ausführung wird nicht vorgetäuscht; Buttons bleiben disabled, wenn Connectoren oder Secrets fehlen.

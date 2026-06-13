@@ -110,3 +110,10 @@ Codex-Prompts aus Manus-Reports müssen Ziel, CEO-Kontext, Manus-Ergebnis, gewü
 ## Externe Integration
 
 Eine echte Manus-API/MCP-/Browser-Integration ist in Phase 2.7 nicht verbunden. Execution Modes bleiben lokal sichtbar als `local`, `prepared`, `mcp_ready`, `external_connected` oder `unavailable`; externe Manus-Ausführung bleibt ohne Integration `prepared`/`mcp_ready`/`unavailable`.
+
+
+## Phase 2.8 Update – Einbettung in Board Execution Chain
+
+Phase 2.8 baut auf Phase 2.7 auf. Der Manus Web Operator bleibt Human-Approval-First und wird jetzt sichtbar in die Board Execution Chain eingebettet: Jarvis empfängt den Auftrag, CEO ChatGPT bewertet Ziel/Risiko/Priorität, COO Manus plant oder recherchiert, CTO Codex erhält bei Bedarf den technischen Handoff, COO Manus prüft operativ, CEO ChatGPT bewertet final und Jarvis legt dem Menschen den Human Report zur Freigabe, Änderung oder Ablehnung vor.
+
+Die externe Manus-Ausführung bleibt ehrlich blockiert, solange keine Manus API, kein Webhook und kein MCP/Connector konfiguriert sind. Lokale Research- und Login-GO-Markierungen dokumentieren Freigaben nur im Task-State und starten keine externe Aktion.
