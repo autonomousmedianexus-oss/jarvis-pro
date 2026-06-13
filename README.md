@@ -19,7 +19,7 @@ Der reproduzierbare n8n-Workflow liegt unter:
 n8n/workflows/jarvis-pro-interface-v1.json
 ```
 
-Der Workflow enthält keine API-Keys, Secrets oder Passwörter. Er stellt einen POST-Webhook bereit, der den bestehenden Jarvis-Web-Vertrag beibehält:
+Der Workflow enthält keine API-Keys, Secrets oder Passwörter. Er stellt einen POST-Webhook bereit und rekonstruiert den früheren KI-Agenten-Aufbau: Webhook → Normalize Chat Input → Jarvis KI-Agent mit OpenAI Chat Model und Simple Memory → Respond to Webhook. Der bestehende Jarvis-Web-Vertrag bleibt unverändert:
 
 - Request: `{ "chatInput": "Hallo Jarvis" }`
 - Response: `{ "output": "..." }`
@@ -36,7 +36,7 @@ Das Skript führt intern aus:
 npx n8n import:workflow --input n8n/workflows/jarvis-pro-interface-v1.json
 ```
 
-Nach dem Import den Workflow in n8n prüfen und aktivieren. Der Webhook-Pfad bleibt kompatibel mit der Jarvis-Weboberfläche:
+Nach dem Import den Workflow in n8n prüfen. Der Webhook-Pfad bleibt kompatibel mit der Jarvis-Weboberfläche:
 
 ```text
 http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6
@@ -44,14 +44,17 @@ http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6
 
 ## OpenAI Credential lokal einrichten
 
-Die aktuelle Workflow-Datei committet bewusst keine Credentials. Wenn der Workflow später um einen OpenAI-Knoten erweitert wird, werden Credentials ausschließlich lokal in n8n eingerichtet:
+Die Workflow-Datei committet bewusst keine Credentials. Der OpenAI Chat Model Node ist als Platzhalter im Workflow enthalten und muss nach dem Import ausschließlich lokal mit einem n8n OpenAI Credential verbunden werden:
 
 1. n8n öffnen: `http://localhost:5678`
 2. In n8n zu **Credentials** wechseln.
 3. Ein neues OpenAI Credential anlegen.
 4. Den API-Key nur in n8n speichern.
 5. Keine `.env`, JSON-Exports oder Screenshots mit Secrets committen.
-6. Workflow-Knoten lokal mit diesem Credential verbinden und vor einem Export prüfen, dass keine Secrets im JSON enthalten sind.
+6. Im Workflow den Node **OpenAI Chat Model** öffnen und lokal mit diesem Credential verbinden.
+7. Prüfen, dass **Simple Memory** / **Einfacher Speicher** mit dem **Jarvis KI-Agent** verbunden ist.
+8. Workflow speichern und aktivieren/veröffentlichen.
+9. Vor jedem Export prüfen, dass keine Secrets im JSON enthalten sind.
 
 ## Jarvis starten
 
@@ -75,11 +78,14 @@ Das Skript startet:
 
 ## Test mit „Hallo Jarvis“
 
-1. Workflow importieren und in n8n aktivieren.
-2. Jarvis starten.
-3. Jarvis-Web öffnen: `http://localhost:5173`
-4. Im Chat `Hallo Jarvis` senden.
-5. Erwartung: Die Weboberfläche zeigt eine Jarvis-Antwort aus `data.output` an.
+1. Workflow importieren.
+2. In n8n den Node **OpenAI Chat Model** lokal mit dem OpenAI Credential verbinden.
+3. Prüfen, dass **Simple Memory** / **Einfacher Speicher** verbunden ist.
+4. Workflow speichern und aktivieren/veröffentlichen.
+5. Jarvis starten.
+6. Jarvis-Web öffnen: `http://localhost:5173`
+7. Im Chat `Hallo Jarvis` senden.
+8. Erwartung: Die Weboberfläche zeigt eine Jarvis-Antwort aus `data.output` an.
 
 Direkter Webhook-Test:
 
