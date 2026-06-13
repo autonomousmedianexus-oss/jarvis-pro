@@ -135,3 +135,14 @@ Wenn `OPENAI_API_KEY` nicht gesetzt ist, wenn `/api/tts` nicht erreichbar ist od
 ### Keine externen Aktionen ohne Freigabe
 
 Der Command Bus führt weiterhin keine externen Aktionen selbst aus. Er erstellt lokale Task-Entwürfe, Briefings und Freigabemarkierungen. Externe Ausführung, echte Agenten-Calls, n8n-Automationen jenseits des bestehenden Chat-Vertrags und spätere Manus-/Codex-/Claude-/CFO-Integrationen brauchen menschliche Freigabe.
+
+## Phase 2.6 Update — CEO Layer vor Command Bus
+
+Der Command Bus steht jetzt logisch nach dem CEO ChatGPT Layer. Jede erkannte Aufgabe entsteht aus einer Executive Decision und verweist auf deren ID.
+
+- Der Task-Zähler wird aus derselben Task-State-Liste berechnet, die auch gerendert wird.
+- 0/1/n Aufgaben werden konsistent angezeigt.
+- Mehrere Tasks pro Nachricht sind möglich, z. B. COO Manus + CTO Codex.
+- Task-Karten zeigen Rolle, Status, Priorität, Freigabe und nächste Aktion.
+- Lokale Freigabe ändert nur den Jarvis-Web-Status.
+- Externe Ausführung bleibt als nicht verbunden gekennzeichnet.

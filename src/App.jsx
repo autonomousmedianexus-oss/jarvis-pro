@@ -3,7 +3,7 @@ import "./App.css";
 
 const ROLES = {
   CEO_CHATGPT: { label: "CEO ChatGPT", state: "AKTIV" },
-  COO_MANUS: { label: "COO Manus", state: "VORBEREITET" },
+  COO_MANUS: { label: "COO Manus", state: "DELEGATION AKTIV" },
   CTO_CODEX: { label: "CTO Codex", state: "VORBEREITET" },
   CSO_CLAUDE: { label: "CSO Claude", state: "VORBEREITET" },
   CFO_FINANCE: { label: "CFO Finance", state: "GEPLANT" },
@@ -96,59 +96,6 @@ function commandNeedsApproval(route, normalized) {
   return approvalByText || approvalByNextAction || preparesExternalAction;
 }
 
-function createCommandTask(sourceMessage, route, commandNumber, taskOffset, normalized) {
-  const requiresHumanApproval = commandNeedsApproval(route, normalized);
-  const sequence = commandNumber + taskOffset;
-
-  return {
-    id: `TASK-${String(sequence).padStart(3, "0")}`,
-    title: `Auftrag aus Nutzerkommando #${String(sequence).padStart(3, "0")}`,
-    description: sourceMessage,
-    sourceMessage,
-    assignedRole: route.role,
-    roleLabel: ROLES[route.role].label,
-    priority: requiresHumanApproval ? "hoch" : route.priority,
-    status: requiresHumanApproval ? "needs_approval" : "draft",
-    requiresHumanApproval,
-    nextAction: route.nextAction,
-    createdAt: new Date().toISOString(),
-    category: route.category,
-  };
-}
-
-function createCommandsFromMessage(sourceMessage, commandNumber) {
-  const normalized = sourceMessage.toLowerCase();
-  const matchedRoutes = COMMAND_MATCHERS.filter((route) =>
-    includesAny(normalized, route.terms),
-  );
-  const requiresHumanApproval = includesAny(normalized, HUMAN_APPROVAL_TERMS);
-
-  if (matchedRoutes.length === 0 && !requiresHumanApproval) return [];
-
-  if (matchedRoutes.length === 0) {
-    return [
-      {
-        id: `TASK-${String(commandNumber).padStart(3, "0")}`,
-        title: `Auftrag aus Nutzerkommando #${String(commandNumber).padStart(3, "0")}`,
-        description: sourceMessage,
-        sourceMessage,
-        assignedRole: "HUMAN_OWNER",
-        roleLabel: ROLES.HUMAN_OWNER.label,
-        priority: "hoch",
-        status: "needs_approval",
-        requiresHumanApproval: true,
-        nextAction: "Entscheidungsvorlage für den menschlichen Owner vorbereiten.",
-        createdAt: new Date().toISOString(),
-        category: "operations",
-      },
-    ];
-  }
-
-  return matchedRoutes.map((route, index) =>
-    createCommandTask(sourceMessage, route, commandNumber, index, normalized),
-  );
-}
-
 function createVisibleSummary(text) {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
   if (normalized.length <= 260) return normalized;
@@ -157,48 +104,132 @@ function createVisibleSummary(text) {
   return summary.length > 260 ? `${summary.slice(0, 257)}...` : summary;
 }
 
-function createManusBriefing(task, allTasks = []) {
-  if (!task) return null;
-  const codexTask = allTasks.find((item) => item.assignedRole === "CTO_CODEX" && item.sourceMessage === task.sourceMessage);
-  const codexDependency = codexTask
-    ? "Nach Sprintplanung bitte Codex-Auftrag vorbereiten, aber keine technische Umsetzung ohne menschliche Freigabe."
-    : "Keine technische Übergabe erkannt; bei Bedarf Codex-Auftrag nur als Entwurf vorbereiten.";
-  const taskList = [
-    "Sprintplanung und Task-Breakdown strukturieren",
-    "operative Abhängigkeiten und Blocker sichtbar machen",
-    "Fortschrittsbericht und Rückfragen an den Menschen formulieren",
-    codexDependency,
-  ];
+function generateExecutiveDecision(sourceMessage, context = {}) {
+  const normalized = sourceMessage.toLowerCase();
+  const matchedRoutes = COMMAND_MATCHERS.filter((route) => includesAny(normalized, route.terms));
+  const recommendedRoles = matchedRoutes.length > 0 ? matchedRoutes.map((route) => route.role) : ["CEO_CHATGPT"];
+  const technical = recommendedRoles.includes("CTO_CODEX");
+  const operational = recommendedRoles.includes("COO_MANUS");
+  const riskTerms = ["ändern", "deploy", "commit", "pr", "kosten", "budget", "löschen", "kritisch", "api", "extern"];
+  const riskLevel = technical || includesAny(normalized, riskTerms) ? "mittel" : "niedrig";
+  const requiresHumanApproval = recommendedRoles.some((role) => EXTERNAL_EXECUTION_ROLES.has(role)) || includesAny(normalized, HUMAN_APPROVAL_TERMS) || riskLevel !== "niedrig";
+  const priority = includesAny(normalized, ["go", "dringend", "hoch", "sprint", "codex", "manus"]) ? "hoch" : "mittel";
+  const routeText = matchedRoutes.map((route) => ROLES[route.role].label).join(" + ") || "CEO ChatGPT";
 
   return {
-    goal: task.description,
-    context: "PROJEKT JARVIS · CEO ChatGPT Layer · Command Bus · Human Approval First",
-    desiredResult: "Ein priorisierter COO-Plan mit klaren nächsten Schritten, offenen Fragen und Freigabepunkten.",
-    tasks: taskList,
-    priority: task.priority,
-    dependencies: codexDependency,
-    openQuestions: "Welche Ressourcen, Termine oder Erfolgskriterien soll der Mensch verbindlich bestätigen?",
-    humanApproval: "required · requiresHumanApproval = true · Status needs_approval / wartet auf Freigabe",
-    expectedOutput: "Manus COO Briefing, Sprintplan, Task-Liste, Blocker-Liste und vorbereiteter Codex-Auftrag falls nötig.",
-    nextStep: "Manus-Auftrag kopieren oder lokal als COO-Task markieren; keine externe Ausführung ohne sichere Integration.",
+    id: `EXEC-${String((context.decisionNumber || 1)).padStart(3, "0")}`,
+    sourceMessage,
+    intentSummary: operational && technical
+      ? "Sprintplanung + technische Prüfung"
+      : `Nutzerabsicht aus Jarvis-Kommando: ${createVisibleSummary(sourceMessage)}`,
+    strategicAssessment: operational && technical
+      ? "CEO Assessment: operative Planung an Manus, technische Prüfung an Codex. Beide bleiben unter CEO-Steuerung und warten auf menschliches GO."
+      : `CEO Assessment: ${routeText} als zuständige Rolle(n) vorbereiten; keine kritische Aktion ohne menschliche Freigabe.`,
+    recommendedRoles,
+    priority,
+    riskLevel,
+    requiresHumanApproval,
+    approvalReason: requiresHumanApproval
+      ? "Human Approval First: lokale Delegation/Prompts sind erlaubt, externe Ausführung oder Code-/Automationsänderungen benötigen menschliches GO."
+      : "Kein kritischer externer Ausführungsschritt erkannt; CEO Layer hält trotzdem die Freigabe-Kontrolle sichtbar.",
+    nextExecutiveAction: "Command Bus Task(s) strukturieren, Delegationsbriefings ablegen und Freigabe durch den Menschen abwarten.",
+    createdAt: new Date().toISOString(),
   };
 }
 
-function formatManusPrompt(task, allTasks = []) {
-  const briefing = createManusBriefing(task, allTasks);
-  if (!briefing) return "";
+function generateManusBriefing(task, executiveDecision, context = {}) {
+  if (!task) return "";
+  const codexTask = context.tasks?.find((item) => item.assignedRole === "CTO_CODEX" && item.sourceMessage === task.sourceMessage);
+  const codexFollowUp = codexTask
+    ? "Codex-Folgeauftrag: technische Prüfung vorbereiten; keine Änderung, kein Commit, kein PR ohne menschliches GO."
+    : "Mögliche Codex-Folgeaufgabe: technische Prüfung nur als Entwurf anlegen, falls der Owner sie freigibt.";
   return `Rolle: COO Manus
 Projekt: PROJEKT JARVIS
-Auftrag: ${task.description}
-Kontext: ${briefing.context}
-Ziele: ${briefing.desiredResult}
-Einschränkungen: Keine externe Ausführung ohne menschliche Freigabe. Externe Manus-Integration ist noch nicht verbunden.
-Gewünschter Output: ${briefing.expectedOutput}
-Aufgabenliste:
-- ${briefing.tasks.join("\n- ")}
-Rückfragen: ${briefing.openQuestions}
-Freigabe-Regeln: ${briefing.humanApproval}
-Übergabe an Codex, falls nötig: ${briefing.dependencies}`;
+CEO-Kontext: ${executiveDecision.intentSummary} · ${executiveDecision.strategicAssessment}
+Ziel: ${task.description}
+Kontext: Jarvis-Web ist Oberfläche und Kommandozentrale. CEO ChatGPT priorisiert; Command Bus routet; Mensch entscheidet.
+Aufgaben:
+- Sprintplan und Task-Breakdown strukturieren
+- operative Abhängigkeiten, Blocker und Rückfragen sichtbar machen
+- Statusbericht für Jarvis-Web formulieren
+- ${codexFollowUp}
+Priorität: ${task.priority}
+Abhängigkeiten: CEO Decision ${executiveDecision.id}; Human Approval; externe Manus-Integration nicht verbunden.
+Offene Fragen: Welche Ziele, Fristen, Ressourcen und Akzeptanzkriterien muss der Mensch bestätigen?
+Gewünschter Output: Sprintplan, Task-Liste, Blocker-Liste, Rückfragen und vorbereitete Codex-Folgeaufgabe.
+Freigabe-Regeln: Status bleibt wartet auf Freigabe/freigegeben lokal. Keine externe Manus-Ausführung vortäuschen.
+Mögliche Codex-Folgeaufgabe: ${codexFollowUp}`;
+}
+
+function generateCodexPrompt(task, executiveDecision) {
+  if (!task) return "";
+  return `Rolle: CTO Codex
+CEO-Kontext: ${executiveDecision.intentSummary} · ${executiveDecision.strategicAssessment}
+Ziel: ${task.description}
+Kontext: Jarvis Pro Phase 2.6; CEO ChatGPT steht vor Command Bus und Agentenrouting.
+Dateien/Module falls ableitbar: Frontend src/App.jsx, src/App.css; Dokumentation README.md und docs/*; keine n8n-Änderung ohne Notwendigkeit.
+Anforderungen:
+- technische Prüfung strukturieren
+- betroffene Dateien/Module benennen
+- sichere Umsetzungsschritte vorschlagen
+Nicht brechen: n8n-Vertrag bleibt { chatInput: userMessage } und data.output; Voice First bleibt aktiv; keine Secrets ins Frontend.
+Tests: npm run lint, npm run build, Secret Scan.
+Secret-Regeln: Keine API-Keys, Passwörter oder Tokens einfügen.
+Nach Umsetzung: Commit + PR erstellen, nicht mergen.
+Warten auf menschliche Prüfung: Keine Änderung, kein Commit, kein PR ohne menschliches GO.`;
+}
+
+function generateExecutiveSummary(executiveDecision, tasks = []) {
+  const roles = tasks.map((task) => task.roleLabel).join(", ") || "CEO ChatGPT";
+  return `Executive Summary (${executiveDecision.id})\nIntent: ${executiveDecision.intentSummary}\nAssessment: ${executiveDecision.strategicAssessment}\nBetroffene Rollen: ${roles}\nPriorität: ${executiveDecision.priority}\nRisiko: ${executiveDecision.riskLevel}\nFreigabe: ${executiveDecision.requiresHumanApproval ? "menschliches GO erforderlich" : "lokal beobachtet"}\nNächster Schritt: ${executiveDecision.nextExecutiveAction}`;
+}
+
+function createCommandTask(sourceMessage, route, commandNumber, taskOffset, normalized, executiveDecision) {
+  const requiresHumanApproval = commandNeedsApproval(route, normalized) || executiveDecision.requiresHumanApproval;
+  const sequence = commandNumber + taskOffset;
+
+  return {
+    id: `TASK-${String(sequence).padStart(3, "0")}`,
+    title: `Aufgabe-D${String(sequence).padStart(2, "0")}`,
+    description: sourceMessage,
+    sourceMessage,
+    executiveDecisionId: executiveDecision.id,
+    assignedRole: route.role,
+    roleLabel: ROLES[route.role].label,
+    priority: executiveDecision.priority || (requiresHumanApproval ? "hoch" : route.priority),
+    status: requiresHumanApproval ? "needs_approval" : "draft",
+    requiresHumanApproval,
+    nextAction: route.nextAction,
+    createdAt: new Date().toISOString(),
+    category: route.category,
+    externalStatus: "extern nicht verbunden",
+  };
+}
+
+function createCommandsFromDecision(sourceMessage, commandNumber, executiveDecision) {
+  const normalized = sourceMessage.toLowerCase();
+  const matchedRoutes = COMMAND_MATCHERS.filter((route) => includesAny(normalized, route.terms));
+
+  if (matchedRoutes.length === 0) {
+    return executiveDecision.requiresHumanApproval ? [{
+      id: `TASK-${String(commandNumber).padStart(3, "0")}`,
+      title: `Aufgabe-D${String(commandNumber).padStart(2, "0")}`,
+      description: sourceMessage,
+      sourceMessage,
+      executiveDecisionId: executiveDecision.id,
+      assignedRole: "HUMAN_OWNER",
+      roleLabel: ROLES.HUMAN_OWNER.label,
+      priority: executiveDecision.priority,
+      status: "needs_approval",
+      requiresHumanApproval: true,
+      nextAction: "Entscheidungsvorlage für den menschlichen Owner vorbereiten.",
+      createdAt: new Date().toISOString(),
+      category: "operations",
+      externalStatus: "lokale Freigabe erforderlich",
+    }] : [];
+  }
+
+  return matchedRoutes.map((route, index) => createCommandTask(sourceMessage, route, commandNumber, index, normalized, executiveDecision));
 }
 
 function formatStatus(status) {
@@ -209,6 +240,8 @@ function formatStatus(status) {
     in_progress: "in Arbeit",
     blocked: "blockiert",
     done: "erledigt",
+    approved_local: "freigegeben lokal",
+    ready_for_external_handoff: "bereit für externe Übergabe",
   };
 
   return labels[status] || status;
@@ -260,18 +293,38 @@ function App() {
   const [ttsProvider, setTtsProvider] = useState("OpenAI");
   const [voiceFirst, setVoiceFirst] = useState(true);
   const [expandedMessages, setExpandedMessages] = useState({});
-  const [manusApprovalGranted, setManusApprovalGranted] = useState(false);
+  const [localApprovals, setLocalApprovals] = useState({});
+  const [copyNotice, setCopyNotice] = useState("");
   const [time, setTime] = useState(new Date());
   const [commands, setCommands] = useState([]);
+  const [executiveDecisions, setExecutiveDecisions] = useState([]);
   const chatEndRef = useRef(null);
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
   const sendMessageRef = useRef(null);
   const latestCommand = commands.at(-1);
+  const latestDecision = executiveDecisions.at(-1);
   const recentCommands = commands.slice(-4).reverse();
   const latestManusTask = [...commands].reverse().find((command) => command.assignedRole === "COO_MANUS");
-  const latestManusBriefing = latestManusTask ? createManusBriefing(latestManusTask, commands) : null;
+  const latestCodexTask = [...commands].reverse().find((command) => command.assignedRole === "CTO_CODEX");
+  const latestManusDecision = executiveDecisions.find((decision) => decision.id === latestManusTask?.executiveDecisionId) || latestDecision;
+  const latestCodexDecision = executiveDecisions.find((decision) => decision.id === latestCodexTask?.executiveDecisionId) || latestDecision;
+  const latestManusBriefing = latestManusTask && latestManusDecision ? generateManusBriefing(latestManusTask, latestManusDecision, { tasks: commands }) : "";
+  const latestCodexPrompt = latestCodexTask && latestCodexDecision ? generateCodexPrompt(latestCodexTask, latestCodexDecision, { tasks: commands }) : "";
+  const latestExecutiveSummary = latestDecision ? generateExecutiveSummary(latestDecision, commands.filter((task) => task.executiveDecisionId === latestDecision.id)) : "";
   const voiceStatusLabel = VOICE_STATUS_LABELS[voiceStatus] || voiceStatus;
+
+  const copyToClipboard = async (text, notice) => {
+    if (!text) return;
+    await navigator.clipboard?.writeText(text);
+    setCopyNotice(notice);
+    window.setTimeout(() => setCopyNotice(""), 2200);
+  };
+
+  const markTask = (taskId, status) => {
+    setLocalApprovals((old) => ({ ...old, [taskId]: status }));
+    setCommands((old) => old.map((task) => task.id === taskId ? { ...task, status } : task));
+  };
 
   const WEBHOOK_URL =
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
@@ -452,7 +505,9 @@ function App() {
 
     setMessage("");
     setChat((old) => [...old, { role: "user", text: userMessage }]);
-    const draftedCommands = createCommandsFromMessage(userMessage, commands.length + 1);
+    const executiveDecision = generateExecutiveDecision(userMessage, { decisionNumber: executiveDecisions.length + 1 });
+    const draftedCommands = createCommandsFromDecision(userMessage, commands.length + 1, executiveDecision);
+    setExecutiveDecisions((old) => [...old, executiveDecision]);
     if (draftedCommands.length > 0) {
       setCommands((old) => [...old, ...draftedCommands]);
     }
@@ -509,6 +564,8 @@ function App() {
           onClick={() => {
             setChat([]);
             setCommands([]);
+            setExecutiveDecisions([]);
+            setLocalApprovals({});
           }}
         >
           + Neuer Chat
@@ -520,9 +577,9 @@ function App() {
             <span>CEO ChatGPT</span>
             <small>AKTIV</small>
           </div>
-          <div className="agentCard prepared">
+          <div className="agentCard active delegation">
             <span>COO Manus</span>
-            <small>VORBEREITET</small>
+            <small>DELEGATION AKTIV</small>
           </div>
           <div className="agentCard prepared">
             <span>CTO Codex</span>
@@ -600,9 +657,9 @@ function App() {
                 Mensch bleibt höchste Entscheidungsinstanz.
               </p>
               <div className="welcomeGrid">
-                <span>CEO AKTIV</span>
-                <span>COMMAND BUS</span>
-                <span>n8n READY</span>
+                <span>JARVIS INTERFACE</span>
+                <span>CEO VOR COMMAND BUS</span>
+                <span>HUMAN APPROVAL</span>
               </div>
             </div>
           )}
@@ -693,7 +750,32 @@ function App() {
         <div className="statusModule ceoLayer">
           <p>CEO ChatGPT Layer</p>
           <strong>STRATEGIC CONTROL ACTIVE</strong>
-          <small>Jarvis ist Oberfläche; CEO interpretiert, priorisiert und schützt Freigaben.</small>
+          <small>Jarvis → CEO ChatGPT → Command Bus → Agent Routing. CEO interpretiert, priorisiert und schützt Freigaben.</small>
+          {latestDecision ? (
+            <details className="briefingBox" open>
+              <summary>Executive Summary anzeigen</summary>
+              <pre className="promptBox">{latestExecutiveSummary}</pre>
+              <button className="miniAction" onClick={() => copyToClipboard(latestExecutiveSummary, "Executive Summary kopiert")}>
+                Executive Summary kopieren
+              </button>
+            </details>
+          ) : <small>Noch keine Executive Decision.</small>}
+        </div>
+
+        <div className="statusModule integrationMap">
+          <p>Agenten-Brücke / Integrationsstatus</p>
+          <strong>LOCAL BRIDGE ACTIVE</strong>
+          <ul>
+            <li>CEO ChatGPT Layer: aktiv</li>
+            <li>OpenAI: lokal konfiguriert / n8n-Antworten</li>
+            <li>n8n: aktiv</li>
+            <li>Voice/TTS: {ttsProvider} oder Browser Fallback</li>
+            <li>Command Bus: aktiv</li>
+            <li>Manus COO: lokale Delegation aktiv, externe Integration nicht verbunden</li>
+            <li>Codex CTO: PR-/Prompt-Workflow vorbereitet, direkte externe Ausführung nicht verbunden</li>
+            <li>GitHub: Repo-Kontext vorbereitet</li>
+            <li>Human Approval: aktiv</li>
+          </ul>
         </div>
 
         <div className="statusModule commandBus">
@@ -722,42 +804,56 @@ function App() {
 
         <div className="statusModule manusPanel">
           <p>COO Manus</p>
-          <strong>DELEGATION BEREIT</strong>
-          <small>Externe Integration: nicht verbunden / vorbereitet</small>
+          <strong>DELEGATION AKTIV</strong>
+          <small>Lokale COO-Delegation: aktiv · Externe Manus-Integration: nicht verbunden / vorbereitet · Ausführung: wartet auf menschliche Freigabe</small>
           {latestManusTask ? (
             <div className="manusDetails">
               <span>Letzter Task: {latestManusTask.title}</span>
-              <span>Status: {formatStatus(latestManusTask.status)}</span>
-              <span>Freigabe erforderlich: ja</span>
+              <span>Status: {formatStatus(latestManusTask.status)} · {latestManusTask.externalStatus}</span>
               <span>Briefing verfügbar: ja</span>
-              <span>Nächste Aktion: Manus-Delegation vorbereitet – externe Manus-Integration noch nicht verbunden.</span>
               <details className="briefingBox">
                 <summary>Manus-Briefing anzeigen</summary>
-                <dl>
-                  <dt>Ziel</dt><dd>{latestManusBriefing.goal}</dd>
-                  <dt>Kontext</dt><dd>{latestManusBriefing.context}</dd>
-                  <dt>Gewünschtes Ergebnis</dt><dd>{latestManusBriefing.desiredResult}</dd>
-                  <dt>Aufgabenliste</dt><dd>{latestManusBriefing.tasks.join(" · ")}</dd>
-                  <dt>Priorität</dt><dd>{latestManusBriefing.priority}</dd>
-                  <dt>Abhängigkeiten</dt><dd>{latestManusBriefing.dependencies}</dd>
-                  <dt>Offene Fragen</dt><dd>{latestManusBriefing.openQuestions}</dd>
-                  <dt>Benötigte Freigabe</dt><dd>{latestManusBriefing.humanApproval}</dd>
-                  <dt>Erwarteter Output</dt><dd>{latestManusBriefing.expectedOutput}</dd>
-                  <dt>Nächster Schritt</dt><dd>{latestManusBriefing.nextStep}</dd>
-                </dl>
+                <pre className="promptBox">{latestManusBriefing}</pre>
               </details>
-              <button className="miniAction" onClick={() => navigator.clipboard?.writeText(formatManusPrompt(latestManusTask, commands))}>
+              <button className="miniAction" onClick={() => copyToClipboard(latestManusBriefing, "Manus-Auftrag kopiert")}>
                 Manus-Auftrag kopieren
               </button>
-              <button className="miniAction" onClick={() => setManusApprovalGranted(true)}>
-                Als COO-Task markieren / Freigabe lokal vormerken
+              <button className="miniAction" onClick={() => markTask(latestManusTask.id, "approved_local")}>
+                Freigabe lokal markieren
               </button>
-              <small>{manusApprovalGranted ? "Lokale Freigabe vorgemerkt – keine externe Ausführung gestartet." : "Wartet auf Freigabe"}</small>
+              <button className="miniAction" onClick={() => markTask(latestManusTask.id, "ready_for_external_handoff")}>
+                Als bereit für externe Übergabe markieren
+              </button>
+              <small>{localApprovals[latestManusTask.id] ? "Status lokal geändert – keine externe Ausführung gestartet." : "Status: wartet auf Freigabe"}</small>
             </div>
           ) : (
             <small>Kein Manus-Task erkannt · Briefing wird bei Manus-/Sprint-Aufgaben erzeugt.</small>
           )}
         </div>
+
+        <div className="statusModule codexPanel">
+          <p>CTO Codex</p>
+          <strong>PROMPT WORKFLOW VORBEREITET</strong>
+          <small>Direkte externe Ausführung: nicht verbunden · kein Commit/PR ohne menschliches GO.</small>
+          {latestCodexTask ? (
+            <div className="manusDetails">
+              <span>Letzter Task: {latestCodexTask.title}</span>
+              <span>Status: {formatStatus(latestCodexTask.status)} · {latestCodexTask.externalStatus}</span>
+              <details className="briefingBox">
+                <summary>Codex-Folgeauftrag anzeigen</summary>
+                <pre className="promptBox">{latestCodexPrompt}</pre>
+              </details>
+              <button className="miniAction" onClick={() => copyToClipboard(latestCodexPrompt, "Codex-Auftrag kopiert")}>
+                Codex-Auftrag kopieren
+              </button>
+              <button className="miniAction" onClick={() => markTask(latestCodexTask.id, "approved_local")}>
+                Freigabe lokal markieren
+              </button>
+            </div>
+          ) : <small>Kein Codex-Task erkannt · Folgeauftrag wird bei Technik-/Codex-Aufgaben erzeugt.</small>}
+        </div>
+
+        {copyNotice && <div className="copyToast">{copyNotice}</div>}
 
         <div className="statusModule">
           <p>Chat Session</p>

@@ -42,3 +42,20 @@ Wenn ein User Manus und Codex gleichzeitig erwähnt, entstehen getrennte Command
 ## Nächste Ausbaustufe
 
 Die nächste Stufe wäre eine echte Manus-Integration oder API, falls verfügbar. Vorher braucht Jarvis einen sicheren Integrationsvertrag mit Authentifizierung, Audit-Log, expliziter Freigabe, Fehlerbehandlung und klarer UI-Kennzeichnung, wann eine externe Aktion tatsächlich gestartet wurde.
+
+## Phase 2.6 Update — Manus unter CEO-Steuerung
+
+Manus ist lokal als COO-Delegationsschicht aktiv, aber ausdrücklich unter dem CEO ChatGPT Layer eingeordnet. Der CEO Layer interpretiert und priorisiert zuerst; der Command Bus erstellt danach Manus-Tasks.
+
+- Status in Jarvis-Web: **DELEGATION AKTIV**.
+- Lokale COO-Delegation: aktiv.
+- Externe Manus-Integration: nicht verbunden / vorbereitet.
+- Ausführung: wartet auf menschliche Freigabe.
+
+### Delegation Actions
+
+Jarvis erzeugt Manus-Briefings, macht sie sichtbar und erlaubt das Kopieren über die lokale Delegation Bridge. Lokale Freigabe markiert nur den Status; es wird keine externe Manus-Ausführung gestartet.
+
+### Manus/Codex Pipeline
+
+Manus-Briefings enthalten eine mögliche Codex-Folgeaufgabe. Codex-Aufträge enthalten explizit: keine Änderung, kein Commit, kein PR ohne menschliches GO.

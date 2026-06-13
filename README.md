@@ -170,3 +170,14 @@ Details:
 
 - [`docs/phase-2-5-command-bus.md`](docs/phase-2-5-command-bus.md)
 - [`docs/phase-2-5c-manus-coo.md`](docs/phase-2-5c-manus-coo.md)
+
+## v1.4 / Phase 2.6 — CEO Orchestration & Agent Integration Bridge
+
+Phase 2.6 macht Jarvis-Web zur zentralen Agenten-Arbeitsoberfläche: Nutzer sprechen oder schreiben mit Jarvis, der CEO ChatGPT Layer interpretiert und priorisiert zuerst, danach strukturiert der Command Bus Aufgaben für Manus, Codex, Claude, CFO oder n8n.
+
+- CEO ChatGPT Layer ist Orchestrator vor Manus/Codex.
+- Integrationsstatus zeigt lokal aktive und nur vorbereitete Brücken ehrlich an.
+- Manus COO ist lokal als Delegationsschicht aktiv; externe Manus-Integration ist nicht verbunden.
+- Codex CTO ist als Prompt-/PR-Workflow vorbereitet; direkte externe Ausführung ist nicht verbunden.
+- Keine Secrets, keine API-Keys und kein OpenAI-Key im Frontend.
+- Human Approval First: kritische Aktionen, externe Ausführung, Commits und PRs brauchen menschliches GO.

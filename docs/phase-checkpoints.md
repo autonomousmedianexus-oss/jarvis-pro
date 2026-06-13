@@ -49,3 +49,14 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - n8n-Vertrag bleibt stabil:
   - Request: `{ "chatInput": "..." }`
   - Response: `{ "output": "..." }`
+
+## v1.4 / Phase 2.6 — CEO Orchestration & Agent Integration Bridge
+
+- CEO ChatGPT Layer logisch und sichtbar vor Command Bus platziert.
+- Executive Decision State eingeführt.
+- Command-Bus-Zähler aus gerenderter Task-Liste korrigiert.
+- Manus COO lokale Delegation aktiv, externe Integration nicht verbunden.
+- Codex Prompt Workflow vorbereitet, keine direkte externe Ausführung.
+- Agenten-Brücke / Integrationsstatus ergänzt.
+- Responsive Command-Center-Layout für Laptop-Breiten verbessert.
+- Human Approval First bestätigt.
