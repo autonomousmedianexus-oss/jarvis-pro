@@ -117,3 +117,21 @@ Die Jarvis-Sprachausgabe nutzt ausschließlich Browser- und System-Stimmen über
 Die lokale Voice-Konfiguration bevorzugt `de-DE`, wählt nach Möglichkeit eine hochwertige lokale deutsche Stimme und fällt sonst auf geeignete Systemstimmen zurück. Sprechtempo, Pitch und Lautstärke sind so eingestellt, dass Jarvis weniger langsam und weniger abgehackt wirkt. Lange Antworten werden in kleinere Satzabschnitte geteilt, und laufende Ausgabe wird vor einer neuen Antwort gestoppt, damit sich Sprachausgaben nicht überlagern.
 
 Die Qualität hängt vom verwendeten Browser und den lokal installierten Stimmen ab. Eine spätere Premium-TTS-Integration ist geplant, gehört aber nicht zu diesem Patch.
+
+## Patch 2 – Full Screen Command Center, Voice-First und OpenAI TTS Vorbereitung
+
+Phase 2.5b Patch 2 poliert das Command-Center-Layout für breite Bildschirme: linke Agenten-Navigation, zentrale Jarvis-Konsole und rechter Command-/Statusbereich werden als ausbalancierte Spalten genutzt. Auf kleineren Screens bleibt das Interface responsiv und kann stacken oder scrollen.
+
+### Voice-first Verhalten
+
+Jarvis speichert intern weiterhin die vollständige Antwort aus dem bestehenden n8n-Vertrag. Im Haupt-UI wird im Voice-First-Modus standardmäßig eine kurze sichtbare Zusammenfassung angezeigt, damit die Konsole nicht von langen Textblöcken überladen wird. Der Volltext bleibt pro Jarvis-Antwort über „Volltext anzeigen“ erreichbar.
+
+### Optionaler OpenAI TTS Premium-Voice-Modus
+
+OpenAI TTS ist nur als lokaler Dev-Proxy vorbereitet. Der Browser bekommt keinen API-Key. Der Frontend-Aufruf geht an `POST /api/tts`; der Vite-Dev-Proxy liest `OPENAI_API_KEY` ausschließlich aus der lokalen Umgebung und ruft das TTS-Modell `gpt-4o-mini-tts` mit Standardstimme `cedar` auf.
+
+Wenn `OPENAI_API_KEY` nicht gesetzt ist, wenn `/api/tts` nicht erreichbar ist oder wenn die Audioausgabe fehlschlägt, wechselt Jarvis automatisch zur Browser-/Systemstimme. Die UI zeigt diesen Status ehrlich als Browser Fallback an: „OpenAI TTS nicht konfiguriert – Browser-Stimme aktiv.“
+
+### Keine externen Aktionen ohne Freigabe
+
+Der Command Bus führt weiterhin keine externen Aktionen selbst aus. Er erstellt lokale Task-Entwürfe, Briefings und Freigabemarkierungen. Externe Ausführung, echte Agenten-Calls, n8n-Automationen jenseits des bestehenden Chat-Vertrags und spätere Manus-/Codex-/Claude-/CFO-Integrationen brauchen menschliche Freigabe.

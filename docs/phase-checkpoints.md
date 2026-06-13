@@ -37,3 +37,15 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - Command-Bus-Persistenz und Audit-Logik definieren.
 - UI-Flow für menschliche Freigabe ausarbeiten.
 - Sichere Integrationsverträge für spätere Agenten- und n8n-Automationen spezifizieren.
+
+## v1.3 / Phase 2.5b Patch 2 + Phase 2.5c – Layout, Voice-First und Manus COO
+
+- Full-Screen-Command-Center-Layout umgesetzt: linke, zentrale und rechte Spalte nutzen breite Screens ausbalancierter.
+- Voice-First UI umgesetzt: Jarvis zeigt kurze sichtbare Antworten und hält Volltexte einklappbar verfügbar.
+- OpenAI TTS als lokaler `/api/tts` Dev-Proxy vorbereitet; `OPENAI_API_KEY` bleibt ausschließlich lokal in `.env`.
+- Browser-/Systemstimme bleibt automatischer Fallback, wenn OpenAI TTS nicht konfiguriert oder nicht erreichbar ist.
+- Manus COO First Activation umgesetzt/vorbereitet: Delegation bereit, Briefing-Generator, kopierbarer Manus-Auftrag und lokaler Freigabestatus.
+- Keine externe Manus-Ausführung verbunden; externe Integration bleibt ehrlich als „nicht verbunden / vorbereitet“ markiert.
+- n8n-Vertrag bleibt stabil:
+  - Request: `{ "chatInput": "..." }`
+  - Response: `{ "output": "..." }`

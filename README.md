@@ -144,3 +144,29 @@ Details: [`docs/phase-2-5-command-bus.md`](docs/phase-2-5-command-bus.md)
 npm run lint
 npm run build
 ```
+
+## Phase 2.5b Patch 2 + Phase 2.5c – Full Screen, Voice-First und Manus COO
+
+Phase 2.5b Patch 2 erweitert Jarvis Pro um ein stärkeres Full-Screen-Command-Center: linke Agentenübersicht, zentrale Jarvis-Konsole und rechter Command-/Statusbereich sind für breite Screens ausbalanciert, während kleinere Screens weiterhin responsiv stacken können.
+
+Jarvis arbeitet jetzt voice-first: Die vollständige n8n-Antwort bleibt intern vorhanden und wird gesprochen; im Chat erscheint standardmäßig eine kurze Summary mit optionalem „Volltext anzeigen“. Der bestehende Chat-Vertrag bleibt unverändert:
+
+- Frontend sendet weiterhin `{ "chatInput": userMessage }`
+- Frontend liest weiterhin `data.output`
+
+OpenAI TTS ist optional als lokaler Vite-Dev-Proxy unter `POST /api/tts` vorbereitet. Der API-Key darf nur lokal in `.env` gesetzt werden und wird nicht an das Frontend ausgeliefert:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+JARVIS_TTS_PROVIDER=openai
+JARVIS_TTS_VOICE=cedar
+```
+
+Wenn OpenAI TTS nicht konfiguriert ist oder fehlschlägt, nutzt Jarvis automatisch die Browser-/Systemstimme als Fallback.
+
+Phase 2.5c aktiviert Manus sichtbar als COO-Delegationsziel. Manus kann Briefings und kopierbare COO-Aufträge vorbereiten, aber die externe Manus-Integration ist noch nicht verbunden. Jarvis behauptet nicht, Manus extern auszuführen; alle Manus-Delegationen warten auf menschliche Freigabe.
+
+Details:
+
+- [`docs/phase-2-5-command-bus.md`](docs/phase-2-5-command-bus.md)
+- [`docs/phase-2-5c-manus-coo.md`](docs/phase-2-5c-manus-coo.md)
