@@ -126,21 +126,58 @@ function App() {
       <div className="scanlines"></div>
 
       <aside className="sidebar">
-        <h2>JARVIS</h2>
+        <div className="brandPanel">
+          <span className="eyebrow">Executive Board</span>
+          <h2>JARVIS</h2>
+          <small>Command Mesh v2</small>
+        </div>
 
         <button className="newChat" onClick={() => setChat([])}>
           + Neuer Chat
         </button>
 
         <div className="sideSection">
-          <p>AGENTEN</p>
-          <span>Jarvis Core</span>
-          <span>Geschäftsplan-Agent</span>
-          <span>Marketing-Agent</span>
-          <span>Video-Agent</span>
-          <span>n8n-Agent</span>
-          <span>Erinnerungen</span>
-          <span>Automationen</span>
+          <p>EXECUTIVE BOARD</p>
+          <div className="agentCard active">
+            <span>CEO ChatGPT</span>
+            <small>ACTIVE</small>
+          </div>
+          <div className="agentCard planned">
+            <span>CTO Codex</span>
+            <small>PLANNED</small>
+          </div>
+          <div className="agentCard planned">
+            <span>COO Manus</span>
+            <small>PLANNED</small>
+          </div>
+          <div className="agentCard planned">
+            <span>CSO Claude</span>
+            <small>PLANNED</small>
+          </div>
+          <div className="agentCard planned">
+            <span>CFO Finance</span>
+            <small>PLANNED</small>
+          </div>
+        </div>
+
+        <div className="sideSection automationSection">
+          <p>AUTOMATION LAYER</p>
+          <div className="agentCard active bridge">
+            <span>n8n Agent</span>
+            <small>ACTIVE</small>
+          </div>
+          <div className="agentCard future">
+            <span>LangGraph</span>
+            <small>FUTURE</small>
+          </div>
+          <div className="agentCard planned">
+            <span>Research Agent</span>
+            <small>PLANNED</small>
+          </div>
+          <div className="agentCard planned">
+            <span>Memory Agent</span>
+            <small>PLANNED</small>
+          </div>
         </div>
 
         <div className="sideFooter">
@@ -177,7 +214,17 @@ function App() {
         <section className="chatBox">
           {chat.length === 0 && (
             <div className="welcome">
-              Sag <b>„Hallo Jarvis“</b> oder schreibe unten deine Anfrage.
+              <span className="welcomeKicker">Command Console bereit</span>
+              <h3>Executive AI Operations Hub</h3>
+              <p>
+                Sag <b>„Hallo Jarvis“</b> oder schreibe unten deine Anfrage. Die
+                aktive n8n Bridge bleibt unverändert verbunden.
+              </p>
+              <div className="welcomeGrid">
+                <span>HUD SCAN</span>
+                <span>VOICE LINK</span>
+                <span>n8n READY</span>
+              </div>
             </div>
           )}
 
@@ -188,16 +235,30 @@ function App() {
                 item.role === "user" ? "userRow" : "jarvisRow"
               }`}
             >
-              <div className="avatar">{item.role === "user" ? "Du" : "J"}</div>
-              <div className={`bubble ${item.role}`}>{item.text}</div>
+              <div className="avatar">{item.role === "user" ? "DU" : "AI"}</div>
+              <div className={`bubble ${item.role}`}>
+                <span className="messageLabel">
+                  {item.role === "user" ? "USER COMMAND" : "JARVIS RESPONSE"}
+                </span>
+                <div className="messageText">{item.text}</div>
+              </div>
             </div>
           ))}
 
           {loading && (
             <div className="messageRow jarvisRow">
-              <div className="avatar">J</div>
+              <div className="avatar">AI</div>
               <div className="bubble jarvis analyzing">
-                Jarvis analysiert<span>.</span><span>.</span><span>.</span>
+                <span className="messageLabel">ANALYSE MODUL</span>
+                <div className="analyzerGrid">
+                  <i></i>
+                  <i></i>
+                  <i></i>
+                  <i></i>
+                </div>
+                <div className="analyzerText">
+                  Jarvis analysiert<span>.</span><span>.</span><span>.</span>
+                </div>
               </div>
             </div>
           )}
@@ -219,6 +280,42 @@ function App() {
           </button>
         </footer>
       </main>
+
+      <aside className="statusPanel">
+        <div className="statusModule primary">
+          <p>Voice Status</p>
+          <strong>{voiceStatus}</strong>
+          <small>Wake Word Monitor</small>
+        </div>
+
+        <div className="statusModule online">
+          <p>n8n Bridge</p>
+          <strong>LINK ACTIVE</strong>
+          <small>Payload & Output Mapping unchanged</small>
+        </div>
+
+        <div className="statusModule">
+          <p>Chat Session</p>
+          <strong>{chat.length} Messages</strong>
+          <small>{loading ? "Analysis stream pending" : "Console idle"}</small>
+        </div>
+
+        <div className="statusModule futureSystems">
+          <p>Future Systems</p>
+          <ul>
+            <li>LangGraph FUTURE</li>
+            <li>Agent Mesh PLANNED</li>
+            <li>Finance Console PLANNED</li>
+          </ul>
+        </div>
+
+        <div className="statusModule diagnostics">
+          <p>Diagnostics / HUD SIM</p>
+          <div className="diagnosticRow"><span>HUD</span><b>SIM</b></div>
+          <div className="diagnosticRow"><span>API</span><b>NO CHANGE</b></div>
+          <div className="diagnosticRow"><span>VOICE</span><b>MONITOR</b></div>
+        </div>
+      </aside>
     </div>
   );
 }
