@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import "./App.css";
 
 function App() {
@@ -22,7 +22,7 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat, loading]);
 
-  function speak(text) {
+  const speak = useCallback((text) => {
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
 
@@ -32,9 +32,9 @@ function App() {
     utterance.pitch = 0.9;
 
     window.speechSynthesis.speak(utterance);
-  }
+  }, []);
 
-  function startWakeWordListener() {
+  const startWakeWordListener = useCallback(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -72,7 +72,9 @@ function App() {
     recognition.onend = () => {
       try {
         recognition.start();
-      } catch {}
+      } catch {
+        setVoiceStatus("VOICE NEUSTART FEHLGESCHLAGEN");
+      }
     };
 
     try {
@@ -80,7 +82,7 @@ function App() {
     } catch {
       setVoiceStatus("MIKROFON FREIGEBEN");
     }
-  }
+  }, [speak]);
 
   async function sendMessage(customMessage) {
     const userMessage = customMessage || message;

@@ -1,0 +1,85 @@
+{
+  "name": "Jarvis Pro Interface v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "929fb2f5-1f53-4f22-bf25-315d165f72f6",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9b4b6b51-2f2f-4a7f-88c5-1f3324fbf6d6",
+      "name": "Jarvis Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "929fb2f5-1f53-4f22-bf25-315d165f72f6"
+    },
+    {
+      "parameters": {
+        "jsCode": "const chatInput = $json.body?.chatInput ?? $json.chatInput ?? '';\nconst text = String(chatInput).trim();\n\nreturn [\n  {\n    json: {\n      output: text\n        ? `JARVIS online. Eingabe empfangen: ${text}`\n        : 'JARVIS online. Bitte sende ein chatInput-Feld.'\n    }\n  }\n];"
+      },
+      "id": "c2174ded-90d0-44de-bc34-c2f90388dcf5",
+      "name": "Build Jarvis Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $json.output } }}",
+        "options": {}
+      },
+      "id": "64a60886-cd19-4e05-9809-bfc9cdbb7bb9",
+      "name": "Return Jarvis Output",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Jarvis Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Jarvis Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Jarvis Response": {
+      "main": [
+        [
+          {
+            "node": "Return Jarvis Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0f356c7c-6d16-4ad7-b467-a731bca23099",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "jarvis-pro-interface-v1",
+  "tags": []
+}
