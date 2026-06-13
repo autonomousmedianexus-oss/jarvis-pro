@@ -20,12 +20,28 @@
     },
     {
       "parameters": {
-        "jsCode": "const chatInput = $json.body?.chatInput ?? $json.chatInput ?? '';\nconst text = String(chatInput).trim();\n\nreturn [\n  {\n    json: {\n      output: text\n        ? `JARVIS online. Eingabe empfangen: ${text}`\n        : 'JARVIS online. Bitte sende ein chatInput-Feld.'\n    }\n  }\n];"
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3b569d0b-8d89-4c8c-9ebf-915d5d221c2e",
+              "name": "chatInput",
+              "value": "={{ String($json.body?.chatInput ?? $json.chatInput ?? '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "e6f68e5f-bb0d-49bb-8b67-384a2e351b5d",
+              "name": "sessionId",
+              "value": "={{ $json.headers?.['x-jarvis-session-id'] ?? $json.body?.sessionId ?? $json.sessionId ?? 'jarvis-web-default' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
       },
       "id": "c2174ded-90d0-44de-bc34-c2f90388dcf5",
-      "name": "Build Jarvis Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "name": "Normalize Chat Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [
         500,
         300
@@ -33,8 +49,58 @@
     },
     {
       "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput || 'Hallo Jarvis' }}",
+        "options": {
+          "systemMessage": "Jarvis spricht Deutsch.\nJarvis ist die zentrale KI-Kommandokonsole von PROJEKT JARVIS.\nJarvis hilft bei Organisation, Recherche, Automatisierung, Programmierung, n8n, Projektmanagement und Geschäftsmodell-Aufbau.\nJarvis antwortet klar, strukturiert und handlungsorientiert.\nDer Mensch bleibt höchste Entscheidungsinstanz.\nKeine kritischen Aktionen ohne Bestätigung."
+        }
+      },
+      "id": "d3557b90-3760-42df-a350-82d275f2fc8f",
+      "name": "Jarvis KI-Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "9636780f-32e8-43b6-b555-c2f740f0b1a4",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "99f42eb4-a0bd-48c1-a8c1-76761be048b0",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        900,
+        560
+      ]
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { output: $json.output } }}",
+        "responseBody": "={{ { output: String($json.output ?? $json.text ?? $json.response ?? $json.message?.content ?? '') } }}",
         "options": {}
       },
       "id": "64a60886-cd19-4e05-9809-bfc9cdbb7bb9",
@@ -42,7 +108,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        760,
+        1120,
         300
       ]
     }
@@ -53,19 +119,52 @@
       "main": [
         [
           {
-            "node": "Build Jarvis Response",
+            "node": "Normalize Chat Input",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build Jarvis Response": {
+    "Normalize Chat Input": {
+      "main": [
+        [
+          {
+            "node": "Jarvis KI-Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jarvis KI-Agent": {
       "main": [
         [
           {
             "node": "Return Jarvis Output",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Jarvis KI-Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Jarvis KI-Agent",
+            "type": "ai_memory",
             "index": 0
           }
         ]
@@ -76,7 +175,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "0f356c7c-6d16-4ad7-b467-a731bca23099",
+  "versionId": "7f68a8f7-8b91-4b78-8457-b87c43615b23",
   "meta": {
     "templateCredsSetupCompleted": false
   },
