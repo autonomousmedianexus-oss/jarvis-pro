@@ -63,7 +63,21 @@ const VOICE_CONFIG = {
   rate: 1.18,
   pitch: 0.86,
   volume: 0.92,
+  provider: import.meta.env.VITE_JARVIS_TTS_PROVIDER || "openai",
+  voice: import.meta.env.VITE_JARVIS_TTS_VOICE || "cedar",
+  fallbackVoice: "marin",
   fallbackVoiceStrategy: "prefer-local-german-then-premium-system-voice",
+};
+
+const JARVIS_TTS_INSTRUCTIONS =
+  "Sprich auf Deutsch, ruhig, präzise, männlich, souverän, wie eine technische KI-Kommandozentrale. Nicht übertrieben emotional. Kurze Pausen zwischen wichtigen Sätzen.";
+
+const VOICE_STATUS_LABELS = {
+  ready: "bereit",
+  speaking: "spricht",
+  blocked: "blockiert",
+  fallback: "fallback",
+  error: "fehler",
 };
 
 function includesAny(text, terms) {
@@ -135,6 +149,58 @@ function createCommandsFromMessage(sourceMessage, commandNumber) {
   );
 }
 
+function createVisibleSummary(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= 260) return normalized;
+  const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [normalized];
+  const summary = sentences.slice(0, 2).join(" ").trim();
+  return summary.length > 260 ? `${summary.slice(0, 257)}...` : summary;
+}
+
+function createManusBriefing(task, allTasks = []) {
+  if (!task) return null;
+  const codexTask = allTasks.find((item) => item.assignedRole === "CTO_CODEX" && item.sourceMessage === task.sourceMessage);
+  const codexDependency = codexTask
+    ? "Nach Sprintplanung bitte Codex-Auftrag vorbereiten, aber keine technische Umsetzung ohne menschliche Freigabe."
+    : "Keine technische Übergabe erkannt; bei Bedarf Codex-Auftrag nur als Entwurf vorbereiten.";
+  const taskList = [
+    "Sprintplanung und Task-Breakdown strukturieren",
+    "operative Abhängigkeiten und Blocker sichtbar machen",
+    "Fortschrittsbericht und Rückfragen an den Menschen formulieren",
+    codexDependency,
+  ];
+
+  return {
+    goal: task.description,
+    context: "PROJEKT JARVIS · CEO ChatGPT Layer · Command Bus · Human Approval First",
+    desiredResult: "Ein priorisierter COO-Plan mit klaren nächsten Schritten, offenen Fragen und Freigabepunkten.",
+    tasks: taskList,
+    priority: task.priority,
+    dependencies: codexDependency,
+    openQuestions: "Welche Ressourcen, Termine oder Erfolgskriterien soll der Mensch verbindlich bestätigen?",
+    humanApproval: "required · requiresHumanApproval = true · Status needs_approval / wartet auf Freigabe",
+    expectedOutput: "Manus COO Briefing, Sprintplan, Task-Liste, Blocker-Liste und vorbereiteter Codex-Auftrag falls nötig.",
+    nextStep: "Manus-Auftrag kopieren oder lokal als COO-Task markieren; keine externe Ausführung ohne sichere Integration.",
+  };
+}
+
+function formatManusPrompt(task, allTasks = []) {
+  const briefing = createManusBriefing(task, allTasks);
+  if (!briefing) return "";
+  return `Rolle: COO Manus
+Projekt: PROJEKT JARVIS
+Auftrag: ${task.description}
+Kontext: ${briefing.context}
+Ziele: ${briefing.desiredResult}
+Einschränkungen: Keine externe Ausführung ohne menschliche Freigabe. Externe Manus-Integration ist noch nicht verbunden.
+Gewünschter Output: ${briefing.expectedOutput}
+Aufgabenliste:
+- ${briefing.tasks.join("\n- ")}
+Rückfragen: ${briefing.openQuestions}
+Freigabe-Regeln: ${briefing.humanApproval}
+Übergabe an Codex, falls nötig: ${briefing.dependencies}`;
+}
+
 function formatStatus(status) {
   const labels = {
     draft: "Entwurf",
@@ -190,7 +256,11 @@ function App() {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState("VOICE AKTIV");
+  const [voiceStatus, setVoiceStatus] = useState("ready");
+  const [ttsProvider, setTtsProvider] = useState("OpenAI");
+  const [voiceFirst, setVoiceFirst] = useState(true);
+  const [expandedMessages, setExpandedMessages] = useState({});
+  const [manusApprovalGranted, setManusApprovalGranted] = useState(false);
   const [time, setTime] = useState(new Date());
   const [commands, setCommands] = useState([]);
   const chatEndRef = useRef(null);
@@ -199,13 +269,16 @@ function App() {
   const sendMessageRef = useRef(null);
   const latestCommand = commands.at(-1);
   const recentCommands = commands.slice(-4).reverse();
+  const latestManusTask = [...commands].reverse().find((command) => command.assignedRole === "COO_MANUS");
+  const latestManusBriefing = latestManusTask ? createManusBriefing(latestManusTask, commands) : null;
+  const voiceStatusLabel = VOICE_STATUS_LABELS[voiceStatus] || voiceStatus;
 
   const WEBHOOK_URL =
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
 
-  const speak = useCallback((text) => {
+  const speakWithBrowser = useCallback((text) => {
     if (!("speechSynthesis" in window) || !text) {
-      setVoiceStatus("VOICE NICHT VERFÜGBAR");
+      setVoiceStatus("blocked");
       return;
     }
 
@@ -216,7 +289,7 @@ function App() {
       const speakNextChunk = () => {
         const nextChunk = voiceQueueRef.current.shift();
         if (!nextChunk) {
-          setVoiceStatus("VOICE AKTIV");
+          setVoiceStatus("ready");
           return;
         }
 
@@ -229,11 +302,11 @@ function App() {
         utterance.rate = VOICE_CONFIG.rate;
         utterance.pitch = VOICE_CONFIG.pitch;
         utterance.volume = VOICE_CONFIG.volume;
-        utterance.onstart = () => setVoiceStatus("SPRICHT GERADE");
+        utterance.onstart = () => setVoiceStatus("speaking");
         utterance.onend = speakNextChunk;
         utterance.onerror = () => {
           voiceQueueRef.current = [];
-          setVoiceStatus("VOICE BLOCKIERT – BITTE EINMAL KLICKEN");
+          setVoiceStatus("blocked");
         };
 
         window.speechSynthesis.speak(utterance);
@@ -242,16 +315,56 @@ function App() {
       speakNextChunk();
     } catch (error) {
       console.error(error);
-      setVoiceStatus("VOICE BLOCKIERT – BITTE EINMAL KLICKEN");
+      setVoiceStatus("blocked");
     }
   }, []);
+
+  const speak = useCallback(async (text) => {
+    if (!text) return;
+    if (VOICE_CONFIG.provider !== "openai") {
+      setTtsProvider("Browser Fallback");
+      speakWithBrowser(text);
+      return;
+    }
+
+    try {
+      setVoiceStatus("speaking");
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: VOICE_CONFIG.voice, instructions: JARVIS_TTS_INSTRUCTIONS }),
+      });
+
+      if (!response.ok) throw new Error(`TTS unavailable: ${response.status}`);
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        setVoiceStatus("ready");
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        setTtsProvider("Browser Fallback");
+        setVoiceStatus("fallback");
+        speakWithBrowser(text);
+      };
+      setTtsProvider("OpenAI");
+      await audio.play();
+    } catch (error) {
+      console.warn("OpenAI TTS fallback active", error);
+      setTtsProvider("Browser Fallback");
+      setVoiceStatus("fallback");
+      speakWithBrowser(text);
+    }
+  }, [speakWithBrowser]);
 
   const startWakeWordListener = useCallback(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setVoiceStatus("VOICE NICHT VERFÜGBAR");
+      setVoiceStatus("blocked");
       return;
     }
 
@@ -260,7 +373,7 @@ function App() {
     recognition.continuous = true;
     recognition.interimResults = false;
 
-    recognition.onstart = () => setVoiceStatus("VOICE ONLINE");
+    recognition.onstart = () => setVoiceStatus("ready");
 
     recognition.onresult = (event) => {
       const transcript =
@@ -278,21 +391,21 @@ function App() {
     };
 
     recognition.onerror = () => {
-      setVoiceStatus("VOICE BLOCKIERT");
+      setVoiceStatus("blocked");
     };
 
     recognition.onend = () => {
       try {
         recognition.start();
       } catch {
-        setVoiceStatus("VOICE NEUSTART FEHLGESCHLAGEN");
+        setVoiceStatus("error");
       }
     };
 
     try {
       recognition.start();
     } catch {
-      setVoiceStatus("MIKROFON FREIGEBEN");
+      setVoiceStatus("blocked");
     }
   }, [speak]);
 
@@ -314,7 +427,7 @@ function App() {
     const refreshVoices = () => {
       selectedVoiceRef.current = selectJarvisVoice(window.speechSynthesis.getVoices());
       setVoiceStatus((current) =>
-        current === "VOICE NICHT VERFÜGBAR" ? "VOICE AKTIV" : current,
+        current === "blocked" ? "ready" : current,
       );
     };
 
@@ -355,7 +468,7 @@ function App() {
       const data = await response.json();
       const answer = data.output || "Keine Antwort erhalten.";
 
-      setChat((old) => [...old, { role: "jarvis", text: answer }]);
+      setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
       speak(answer);
     } catch (error) {
       console.error(error);
@@ -448,7 +561,7 @@ function App() {
         <div className="sideFooter">
           <p>SYSTEMSTATUS</p>
           <strong>ONLINE</strong>
-          <small>{voiceStatus}</small>
+          <small>{voiceStatusLabel}</small>
         </div>
       </aside>
 
@@ -469,7 +582,7 @@ function App() {
             <span>GPU 07%</span>
             <span>NET ONLINE</span>
             <span>{time.toLocaleTimeString("de-CH")}</span>
-            <span>{voiceStatus}</span>
+            <span>VOICE {voiceStatusLabel.toUpperCase()}</span>
           </div>
 
           <h1>JARVIS PRO</h1>
@@ -506,7 +619,21 @@ function App() {
                 <span className="messageLabel">
                   {item.role === "user" ? "USER COMMAND" : "JARVIS RESPONSE"}
                 </span>
-                <div className="messageText">{item.text}</div>
+                <div className="messageText">
+                  {item.role === "jarvis" && voiceFirst ? item.summary || createVisibleSummary(item.text) : item.text}
+                </div>
+                {item.role === "jarvis" && voiceFirst && item.text !== (item.summary || createVisibleSummary(item.text)) && (
+                  <details
+                    className="fullAnswer"
+                    open={Boolean(expandedMessages[index])}
+                    onToggle={(event) =>
+                      setExpandedMessages((old) => ({ ...old, [index]: event.currentTarget.open }))
+                    }
+                  >
+                    <summary>Volltext anzeigen</summary>
+                    <div>{item.text}</div>
+                  </details>
+                )}
               </div>
             </div>
           ))}
@@ -550,8 +677,12 @@ function App() {
       <aside className="statusPanel">
         <div className="statusModule primary">
           <p>Voice Status</p>
-          <strong>{voiceStatus}</strong>
-          <small>Wake Word Monitor</small>
+          <strong>{voiceStatusLabel}</strong>
+          <small>Voice First: {voiceFirst ? "aktiv" : "inaktiv"} · TTS Provider: {ttsProvider}</small>
+          <small>{ttsProvider === "Browser Fallback" ? "OpenAI TTS nicht konfiguriert – Browser-Stimme aktiv." : "OpenAI TTS lokal über /api/tts vorbereitet."}</small>
+          <button className="miniAction" onClick={() => setVoiceFirst((current) => !current)}>
+            Voice First {voiceFirst ? "deaktivieren" : "aktivieren"}
+          </button>
         </div>
 
         <div className="statusModule online">
@@ -585,6 +716,46 @@ function App() {
             </div>
           ) : (
             <small>0 Aufgaben erkannt · Noch kein lokaler Command-Bus-Task.</small>
+          )}
+        </div>
+
+
+        <div className="statusModule manusPanel">
+          <p>COO Manus</p>
+          <strong>DELEGATION BEREIT</strong>
+          <small>Externe Integration: nicht verbunden / vorbereitet</small>
+          {latestManusTask ? (
+            <div className="manusDetails">
+              <span>Letzter Task: {latestManusTask.title}</span>
+              <span>Status: {formatStatus(latestManusTask.status)}</span>
+              <span>Freigabe erforderlich: ja</span>
+              <span>Briefing verfügbar: ja</span>
+              <span>Nächste Aktion: Manus-Delegation vorbereitet – externe Manus-Integration noch nicht verbunden.</span>
+              <details className="briefingBox">
+                <summary>Manus-Briefing anzeigen</summary>
+                <dl>
+                  <dt>Ziel</dt><dd>{latestManusBriefing.goal}</dd>
+                  <dt>Kontext</dt><dd>{latestManusBriefing.context}</dd>
+                  <dt>Gewünschtes Ergebnis</dt><dd>{latestManusBriefing.desiredResult}</dd>
+                  <dt>Aufgabenliste</dt><dd>{latestManusBriefing.tasks.join(" · ")}</dd>
+                  <dt>Priorität</dt><dd>{latestManusBriefing.priority}</dd>
+                  <dt>Abhängigkeiten</dt><dd>{latestManusBriefing.dependencies}</dd>
+                  <dt>Offene Fragen</dt><dd>{latestManusBriefing.openQuestions}</dd>
+                  <dt>Benötigte Freigabe</dt><dd>{latestManusBriefing.humanApproval}</dd>
+                  <dt>Erwarteter Output</dt><dd>{latestManusBriefing.expectedOutput}</dd>
+                  <dt>Nächster Schritt</dt><dd>{latestManusBriefing.nextStep}</dd>
+                </dl>
+              </details>
+              <button className="miniAction" onClick={() => navigator.clipboard?.writeText(formatManusPrompt(latestManusTask, commands))}>
+                Manus-Auftrag kopieren
+              </button>
+              <button className="miniAction" onClick={() => setManusApprovalGranted(true)}>
+                Als COO-Task markieren / Freigabe lokal vormerken
+              </button>
+              <small>{manusApprovalGranted ? "Lokale Freigabe vorgemerkt – keine externe Ausführung gestartet." : "Wartet auf Freigabe"}</small>
+            </div>
+          ) : (
+            <small>Kein Manus-Task erkannt · Briefing wird bei Manus-/Sprint-Aufgaben erzeugt.</small>
           )}
         </div>
 
