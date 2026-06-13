@@ -79,3 +79,13 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - Local Task Store nutzt localStorage für Executive Decisions, Board Chains, Command Tasks und Approval States ohne Secrets.
 - n8n-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.
 - Externe Manus-/Codex-/GitHub-Ausführung wird nicht vorgetäuscht; Buttons bleiben disabled, wenn Connectoren oder Secrets fehlen.
+
+
+## v1.7 / Phase 2.9 – GitHub/Codex Live Handoff
+
+- Command-Bus-Zähler wird aus exakt derselben `visibleCommandTasks`-Liste berechnet, die gerendert wird.
+- Codex-Handoff enthält Ziel, CEO-Kontext, Manus-Plan, Anforderungen, Sicherheitsregeln, Tests, Branch-/PR-Regeln und Human-Approval-Regeln.
+- GitHub-Issue-Draft enthält Titel, Body, Labels, Priorität, Board-/Decision-/Manus-/Codex-Bezüge, Risiken, Akzeptanzkriterien, Testplan sowie No-Secrets-/No-Merge-Hinweise.
+- GitHub Capability Detection modelliert `connected`, `needs_secret`, `needs_connector`, `prepared`, `unavailable`, `failed` und zeigt bei fehlender Verbindung den Grund.
+- Echte GitHub Issue-/PR-Aktionen bleiben ohne sicheren serverseitigen/n8n/MCP-Connector deaktiviert.
+- n8n-Chat-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.

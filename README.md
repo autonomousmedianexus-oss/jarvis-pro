@@ -196,3 +196,10 @@ Die externe Manus-Integration ist noch nicht verbunden. Jarvis-Web zeigt deshalb
 Jarvis zeigt jetzt die Live Board-Agent Chain als Firmenlogik: **Jarvis → CEO ChatGPT → COO Manus → CTO Codex → COO Manus Review → CEO ChatGPT → Jarvis → Mensch**. Der CEO Layer erzeugt Executive Decisions mit Intent, Risiko, Priorität, betroffenen Agenten, Freigabebedarf und nächstem Schritt.
 
 Verbindungen werden ehrlich getrennt: CEO/n8n/Local Task Store sind aktiv beziehungsweise lokal aktiv; Manus ist lokal delegierbar, aber externe Manus API/Webhook/MCP ist nicht konfiguriert; Codex und GitHub sind als Handoff/Issue-Draft vorbereitet, aber ohne direkte externe Ausführung oder GitHub-API aus dem Frontend. Human Approval First bleibt bindend: keine Logins, Käufe, Zahlungen, Account-Änderungen, Uploads, Löschungen, Commit/PR, Merge oder Deploy ohne explizites menschliches GO. Keine Secrets, API-Keys oder Passwörter werden im Frontend oder in der Doku gespeichert.
+
+
+## Phase 2.9 – GitHub/Codex Live Handoff
+
+Phase 2.9 ergänzt Jarvis Pro um einen kontrollierten GitHub/Codex-Handoff: Aus einem Jarvis-Auftrag entstehen CEO-Kontext, Manus-Plan, Codex-Handoff und ein strukturierter GitHub-Issue-Entwurf. Die UI kann Handoff und Issue Draft anzeigen, kopieren und die GitHub-Fähigkeit prüfen.
+
+GitHub-Issue-Erstellung und PR-/Issue-Status per API bleiben deaktiviert, solange kein sicherer serverseitiger Connector, n8n Credential/Workflow oder MCP/GitHub Tool verbunden ist. Keine Secrets, Tokens, API-Keys oder Passwörter werden ins Frontend oder Repository geschrieben. Human Approval First bleibt bindend: keine externe Aktion, kein Commit/PR, kein Merge und kein Deploy ohne ausdrückliches menschliches GO.

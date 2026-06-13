@@ -89,11 +89,12 @@ const CONNECTION_STATUS = {
   },
   GITHUB: {
     component: "GitHub",
-    status: "needs_secret",
-    possible: "Repo-Kontext und Issue-Draft lokal vorbereiten.",
-    missing: "GitHub Issue/PR API nicht verbunden; serverseitiges Token/Connector fehlt.",
-    allowedAfterGo: "Issue-Draft kopieren; echte Issue-Erstellung erst mit sicherem Backend-Connector.",
-    blocked: "Keine Issue/PR API-Aktion aus dem Frontend; kein Merge/Deploy.",
+    status: import.meta.env.VITE_GITHUB_CONNECTOR_STATUS || "needs_secret",
+    allowedStatuses: ["connected", "needs_secret", "needs_connector", "prepared", "unavailable", "failed"],
+    possible: "Repo-Kontext, Codex-Handoff und GitHub-Issue-Draft lokal vorbereiten; echte API-Aktionen nur über sichere serverseitige Verbindung.",
+    missing: "GitHub Issue API nicht verbunden. Erforderlich: serverseitiger GitHub Connector, n8n Credential oder MCP/GitHub Tool.",
+    allowedAfterGo: "Issue-Draft kopieren oder lokale Freigabe markieren; echte Issue-Erstellung erst mit sicherem Backend-/n8n-/MCP-Connector.",
+    blocked: "Keine Issue/PR API-Aktion aus dem Frontend; kein Token im Browser; kein Merge/Deploy.",
   },
   N8N_AUTOMATION: {
     component: "n8n",
@@ -126,6 +127,10 @@ const TOOL_REGISTRY = [
   { name: "createManusTask", mode: "prepared" },
   { name: "createCodexTask", mode: "prepared" },
   { name: "createGitHubIssueDraft", mode: "prepared" },
+  { name: "copyGitHubIssueDraft", mode: "local" },
+  { name: "checkGitHubIssueCreation", mode: "local" },
+  { name: "createGitHubIssueAfterHumanGo", mode: "server_required" },
+  { name: "readGitHubIssueOrPrStatus", mode: "server_required" },
   { name: "markHumanApproval", mode: "local" },
   { name: "prepareN8nExecution", mode: "api_ready" },
   { name: "readTaskState", mode: "local" },
@@ -139,6 +144,21 @@ const TOOL_REGISTRY = [
   { name: "generate_codex_prompt_from_manus_report", mode: "local" },
   { name: "prepare_monetization_sprint", mode: "prepared" },
   { name: "export_research_task_state", mode: "local" },
+];
+
+const GITHUB_HANDOFF_STATUS_VALUES = [
+  "draft",
+  "copied",
+  "locally_approved",
+  "issue_ready",
+  "issue_created",
+  "codex_pending",
+  "codex_in_progress",
+  "pr_created",
+  "pr_review_required",
+  "approved_by_human",
+  "blocked",
+  "failed",
 ];
 
 const MANUS_WEB_STATUS_VALUES = [
@@ -412,29 +432,107 @@ function createBoardExecutionChain(involvedAgents = [], requiresHumanApproval = 
   ];
 }
 
-function createGitHubIssueDraft(task, executiveDecision, codexPrompt) {
-  if (!task) return "";
-  return `Titel: ${task.title} – ${task.roleLabel} Handoff
+function createCodexHandoff(task, executiveDecision, context = {}) {
+  if (!task) return null;
+  const manusPlan = context.manusBriefing || "COO Manus erstellt Sprintplan, Blocker, Rückfragen und Übergabe an CTO Codex; externe Aktion wartet auf GO.";
+  return {
+    title: `${task.title} – CTO Codex Technical Handoff`,
+    objective: task.description,
+    ceoContext: `${executiveDecision?.intentSummary || "Keine Executive Decision"} · ${executiveDecision?.strategicAssessment || ""}`,
+    manusPlan,
+    implementationRequirements: [
+      "Technische Umsetzung aus Jarvis-Auftrag ableiten",
+      "Board Execution Chain sichtbar beibehalten",
+      "GitHub/Codex-Handoff lokal vorbereiten",
+      "n8n-Chat-Vertrag nicht brechen",
+    ],
+    filesLikelyAffected: ["src/App.jsx", "src/App.css", "README.md", "docs/*"],
+    constraints: ["Keine Secrets", "Keine API-Keys im Frontend", "Kein Merge", "Kein Deploy", "Externe Aktionen nur nach menschlichem GO"],
+    securityRules: ["GitHub Token nur serverseitig/.env/n8n Credentials/MCP", "Keine Passwörter im Code", "Keine geschützten Inhalte kopieren"],
+    testPlan: ["npm run lint", "npm run build", "Secret Scan", "n8n-Vertrag prüfen: { chatInput: userMessage } und data.output"],
+    expectedOutput: context.codexPrompt || "Umsetzung mit Commit und PR nach Freigabe; PR nicht mergen; Status/Risiken an Jarvis zurückmelden.",
+    branchPrRules: "Nicht direkt in main arbeiten; Commit + PR nach Umsetzung; kein Merge ohne menschliches GO.",
+    humanApprovalRules: "Handoff, Issue-Erstellung, PR-Status-API, Merge und Deploy brauchen explizites GO; bei fehlender Verbindung nur lokal markieren.",
+  };
+}
 
-CEO-Kontext:
+function formatCodexHandoff(handoff) {
+  return handoff ? JSON.stringify(handoff, null, 2) : "";
+}
+
+function createGitHubIssueDraft(task, executiveDecision, codexHandoff, manusPlan = "") {
+  if (!task) return null;
+  const relatedManusTask = task.assignedRole === "COO_MANUS" ? task.id : "falls vorhanden über Board Chain verknüpfen";
+  const draft = {
+    title: `${task.title} – GitHub/Codex Handoff`,
+    labels: ["jarvis", "codex-handoff", "human-approval-required"],
+    priority: task.priority,
+    relatedBoardChainId: executiveDecision?.id ? `${executiveDecision.id}-BOARD` : "local-board-chain",
+    relatedExecutiveDecisionId: executiveDecision?.id || "unknown",
+    relatedManusTaskId: relatedManusTask,
+    relatedCodexTaskId: task.id,
+    humanApprovalRequired: true,
+    riskNotes: ["GitHub API ist nur über sicheren serverseitigen/n8n/MCP-Connector erlaubt", "Kein Merge/Deploy ohne separates GO", "n8n-Chat-Vertrag darf nicht brechen"],
+    acceptanceCriteria: ["Command-Bus-Zähler zählt dieselbe sichtbare Liste wie die gerenderten Karten", "Codex-Handoff ist sichtbar und kopierbar", "GitHub Issue Draft ist sichtbar und kopierbar", "Issue-Erstellung bleibt disabled, solange kein sicherer Connector verbunden ist"],
+    testPlan: ["npm run lint", "npm run build", "Secret Scan", "n8n-Vertrag prüfen"],
+    noSecretsNotice: "Keine Secrets, Tokens, API-Keys oder Passwörter committen oder im Frontend verwenden.",
+    noMergeNotice: "Nach Umsetzung Commit + PR erstellen, aber nicht mergen; menschliche Prüfung abwarten.",
+  };
+  draft.body = `# ${draft.title}
+
+## CEO-Kontext
 ${executiveDecision?.intentSummary || "Keine Executive Decision"}
 ${executiveDecision?.strategicAssessment || ""}
 
-Ziel:
-${task.description}
+## Manus-Plan
+${manusPlan || "COO Manus plant Sprint/Tasks/Blocker und prüft nach Umsetzung operativ."}
 
-Codex-Auftrag:
-${codexPrompt}
+## Codex-Auftrag
+${formatCodexHandoff(codexHandoff)}
 
-Sicherheitsregeln:
-- Keine Secrets oder API-Keys committen.
-- Kein Merge, kein Deploy, keine produktive Aktion ohne separates menschliches GO.
-- n8n-Vertrag unverändert lassen: Frontend sendet { chatInput: userMessage }, Frontend liest data.output.
+## Betroffene Dateien/Module
+${(codexHandoff?.filesLikelyAffected || ["src/App.jsx", "src/App.css", "README.md", "docs/*"]).map((item) => `- ${item}`).join("\n")}
 
-Tests:
-- npm run lint
-- npm run build
-- Secret Scan`;
+## Anforderungen
+${draft.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}
+
+## Nicht brechen
+- Frontend sendet weiterhin { chatInput: userMessage }
+- Frontend liest weiterhin data.output
+- Keine Secrets/API-Keys im Frontend
+
+## Tests
+${draft.testPlan.map((item) => `- ${item}`).join("\n")}
+
+## Sicherheitsregeln
+- ${draft.noSecretsNotice}
+- ${draft.noMergeNotice}
+- Externe GitHub-/Codex-Aktionen nur nach menschlichem GO.
+
+## Nach Umsetzung
+Commit + PR erstellen, nicht mergen, auf menschliche Prüfung warten.`;
+  return draft;
+}
+
+function formatGitHubIssueDraft(draft) {
+  return draft ? JSON.stringify(draft, null, 2) : "";
+}
+
+function detectGitHubCapability() {
+  const configuredStatus = CONNECTION_STATUS.GITHUB.status;
+  const serverConnector = import.meta.env.VITE_GITHUB_SERVER_CONNECTOR === "true";
+  const n8nOrchestrator = CONNECTION_STATUS.N8N_AUTOMATION.status === "connected";
+  const connected = configuredStatus === "connected" && serverConnector;
+  return {
+    status: connected ? "connected" : configuredStatus,
+    hasServerSideGitHubConfig: serverConnector,
+    hasLocalEnvToken: false,
+    hasN8nOrchestrator: n8nOrchestrator,
+    canCreateIssueFromJarvis: connected,
+    canReadPrStatus: connected,
+    missing: connected ? "" : CONNECTION_STATUS.GITHUB.missing,
+    issueCreationDisabledReason: connected ? "" : CONNECTION_STATUS.GITHUB.missing,
+  };
 }
 
 function createReturnPathReport(task, executiveDecision) {
@@ -470,6 +568,8 @@ function createCommandTask(sourceMessage, route, commandNumber, taskOffset, norm
     createdAt: new Date().toISOString(),
     category: route.category,
     externalStatus: "extern nicht verbunden",
+    githubHandoffStatus: route.role === "CTO_CODEX" ? "draft" : undefined,
+    githubIssue: null,
     webResearchTask: route.role === "COO_MANUS" && isManusWebResearchIntent(sourceMessage)
       ? createManusWebResearchTask(sourceMessage, sequence, executiveDecision)
       : null,
@@ -496,6 +596,8 @@ function createCommandsFromDecision(sourceMessage, commandNumber, executiveDecis
       createdAt: new Date().toISOString(),
       category: "operations",
       externalStatus: "lokale Freigabe erforderlich",
+      githubHandoffStatus: "draft",
+      githubIssue: null,
     }] : [];
   }
 
@@ -511,6 +613,15 @@ function formatStatus(status) {
     blocked: "blockiert",
     done: "erledigt",
     approved_local: "freigegeben lokal",
+    locally_approved: "lokal freigegeben",
+    issue_ready: "Issue bereit",
+    issue_created: "Issue erstellt",
+    codex_pending: "Codex wartet",
+    codex_in_progress: "Codex arbeitet",
+    pr_created: "PR erstellt",
+    pr_review_required: "PR Review nötig",
+    approved_by_human: "vom Menschen freigegeben",
+    failed: "fehlgeschlagen",
     approved_for_research: "für Recherche freigegeben",
     approved_for_login: "Login freigegeben",
     ready_for_external_handoff: "bereit für externe Übergabe",
@@ -577,11 +688,9 @@ function App() {
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
   const sendMessageRef = useRef(null);
-  const latestCommand = commands.at(-1);
   const latestDecision = executiveDecisions.at(-1);
   const visibleCommandTasks = commands.slice(-4).reverse();
   const visibleCommandTaskCount = visibleCommandTasks.length;
-  const recentCommands = visibleCommandTasks;
   const latestManusTask = [...commands].reverse().find((command) => command.assignedRole === "COO_MANUS");
   const latestCodexTask = [...commands].reverse().find((command) => command.assignedRole === "CTO_CODEX");
   const latestManusDecision = executiveDecisions.find((decision) => decision.id === latestManusTask?.executiveDecisionId) || latestDecision;
@@ -590,7 +699,11 @@ function App() {
   const latestCodexPrompt = latestCodexTask && latestCodexDecision ? generateCodexPrompt(latestCodexTask, latestCodexDecision, { tasks: commands }) : "";
   const latestExecutiveSummary = latestDecision ? generateExecutiveSummary(latestDecision, commands.filter((task) => task.executiveDecisionId === latestDecision.id)) : "";
   const activeBoardChain = latestDecision?.boardFlow || createBoardExecutionChain([], false);
-  const latestGitHubIssueDraft = latestCodexTask && latestCodexDecision ? createGitHubIssueDraft(latestCodexTask, latestCodexDecision, latestCodexPrompt) : "";
+  const githubCapability = detectGitHubCapability();
+  const latestCodexHandoff = latestCodexTask && latestCodexDecision ? createCodexHandoff(latestCodexTask, latestCodexDecision, { manusBriefing: latestManusBriefing, codexPrompt: latestCodexPrompt }) : null;
+  const latestCodexHandoffText = formatCodexHandoff(latestCodexHandoff);
+  const latestGitHubIssueDraft = latestCodexTask && latestCodexDecision ? createGitHubIssueDraft(latestCodexTask, latestCodexDecision, latestCodexHandoff, latestManusBriefing) : null;
+  const latestGitHubIssueDraftText = formatGitHubIssueDraft(latestGitHubIssueDraft);
   const latestReturnPathReport = createReturnPathReport(latestCodexTask || latestManusTask, latestDecision);
   const voiceStatusLabel = VOICE_STATUS_LABELS[voiceStatus] || voiceStatus;
 
@@ -603,7 +716,11 @@ function App() {
 
   const markTask = (taskId, status) => {
     setLocalApprovals((old) => ({ ...old, [taskId]: status }));
-    setCommands((old) => old.map((task) => task.id === taskId ? { ...task, status } : task));
+    setCommands((old) => old.map((task) => {
+      if (task.id !== taskId) return task;
+      const githubHandoffStatus = GITHUB_HANDOFF_STATUS_VALUES.includes(status) ? status : task.githubHandoffStatus;
+      return { ...task, status, githubHandoffStatus };
+    }));
   };
 
   const WEBHOOK_URL =
@@ -1097,9 +1214,9 @@ function App() {
           <strong>
             {visibleCommandTaskCount} {visibleCommandTaskCount === 1 ? "Aufgabe" : "Aufgaben"} sichtbar
           </strong>
-          {latestCommand ? (
+          {visibleCommandTaskCount > 0 ? (
             <div className="commandDetails">
-              {recentCommands.map((command) => (
+              {visibleCommandTasks.map((command) => (
                 <article className="commandTaskCard" key={command.id}>
                   <span className="commandTaskId">{command.id}</span>
                   <span>Rolle: {command.roleLabel}</span>
@@ -1161,25 +1278,33 @@ function App() {
             <div className="manusDetails">
               <span>Letzter Task: {latestCodexTask.title}</span>
               <span>Status: {formatStatus(latestCodexTask.status)} · {latestCodexTask.externalStatus}</span>
+              <span>GitHub: {githubCapability.status} · Issue API: {githubCapability.canCreateIssueFromJarvis ? "verbunden" : "nicht verbunden"}</span>
+              <span>Handoff-Status: {latestCodexTask.githubHandoffStatus || "draft"} · Modell: {GITHUB_HANDOFF_STATUS_VALUES.length} Statuswerte</span>
               <details className="briefingBox">
-                <summary>Codex-Folgeauftrag anzeigen</summary>
-                <pre className="promptBox">{latestCodexPrompt}</pre>
+                <summary>Codex-Handoff anzeigen</summary>
+                <pre className="promptBox">{latestCodexHandoffText}</pre>
               </details>
-              <button className="miniAction" onClick={() => copyToClipboard(latestCodexPrompt, "Codex-Auftrag kopiert")}>
-                Codex-Auftrag kopieren
+              <button className="miniAction" onClick={() => copyToClipboard(latestCodexHandoffText, "Codex-Handoff kopiert")}>
+                Codex-Handoff kopieren
               </button>
-              <button className="miniAction" onClick={() => markTask(latestCodexTask.id, "approved_local")}>
-                Codex-Handoff-GO lokal markieren
+              <button className="miniAction" onClick={() => markTask(latestCodexTask.id, "locally_approved")}>
+                Als Codex-Handoff freigegeben markieren
               </button>
               <details className="briefingBox">
-                <summary>GitHub Issue Draft anzeigen</summary>
-                <pre className="promptBox">{latestGitHubIssueDraft}</pre>
+                <summary>GitHub-Issue-Entwurf anzeigen</summary>
+                <pre className="promptBox">{latestGitHubIssueDraftText}</pre>
               </details>
-              <button className="miniAction" onClick={() => copyToClipboard(latestGitHubIssueDraft, "GitHub Issue Draft kopiert")}>
-                GitHub Issue Draft kopieren
+              <button className="miniAction" onClick={() => copyToClipboard(latestGitHubIssueDraftText, "GitHub Issue Draft kopiert")}>
+                GitHub-Issue-Entwurf kopieren
               </button>
-              <button className="miniAction" disabled title={CONNECTION_STATUS.GITHUB.missing}>GitHub Issue erstellen deaktiviert</button>
-              <button className="miniAction" disabled title={CONNECTION_STATUS.CTO_CODEX.missing}>PR-Status prüfen deaktiviert</button>
+              <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify(githubCapability, null, 2), "GitHub-Prüfung kopiert")}>
+                GitHub-Issue-Erstellung prüfen
+              </button>
+              <button className="miniAction" disabled={!githubCapability.canCreateIssueFromJarvis} title={githubCapability.issueCreationDisabledReason || "Nur nach menschlichem GO"}>
+                GitHub Issue erstellen{githubCapability.canCreateIssueFromJarvis ? " (nach GO)" : " deaktiviert"}
+              </button>
+              <button className="miniAction" disabled={!githubCapability.canReadPrStatus} title={githubCapability.issueCreationDisabledReason || "Nur nach menschlichem GO"}>PR-/Issue-Status prüfen deaktiviert</button>
+              {!githubCapability.canCreateIssueFromJarvis && <small>{githubCapability.issueCreationDisabledReason}</small>}
             </div>
           ) : <small>Kein Codex-Task erkannt · Folgeauftrag wird bei Technik-/Codex-Aufgaben erzeugt.</small>}
         </div>
