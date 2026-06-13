@@ -134,6 +134,8 @@ Phase 2.5b ergänzt Jarvis Pro um eine lokale Command-Bus-Vorbereitung im Fronte
 
 Der Mensch bleibt höchste Entscheidungsinstanz. Phase 2.5b startet keine echte externe Manus-, Claude-, CFO- oder Codex-Automation und verändert den bestehenden n8n/Jarvis-Web-Chat-Vertrag nicht.
 
+Das lokale Interface enthält außerdem eine verbesserte Jarvis-Voice über Browser-/Systemstimmen sowie ein breiteres Command-Center-Layout für Chat, CEO Command Bus, Agent Routing, Human Approval und n8n Bridge.
+
 Details: [`docs/phase-2-5-command-bus.md`](docs/phase-2-5-command-bus.md)
 
 ## Entwicklung
