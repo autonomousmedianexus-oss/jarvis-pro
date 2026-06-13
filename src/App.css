@@ -1112,3 +1112,106 @@ body {
     max-width: none;
   }
 }
+
+/* Phase 2.6: CEO orchestration bridge + responsive command center */
+.integrationMap,
+.codexPanel {
+  border-color: rgba(103, 232, 249, 0.46);
+}
+
+.promptBox {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  padding: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.58);
+  color: rgba(224, 251, 255, 0.82);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.copyToast {
+  position: sticky;
+  bottom: 12px;
+  z-index: 8;
+  padding: 10px 12px;
+  border: 1px solid rgba(34, 197, 94, 0.7);
+  border-radius: 12px;
+  background: rgba(20, 83, 45, 0.9);
+  color: #dcfce7;
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.28);
+  font-size: 12px;
+  text-align: center;
+}
+
+.agentCard.delegation small {
+  color: #86efac;
+}
+
+@media (max-width: 1360px) and (min-width: 861px) {
+  .layout {
+    grid-template-columns: minmax(210px, 240px) minmax(0, 1fr) minmax(290px, 320px);
+  }
+
+  .sidebar,
+  .statusPanel {
+    padding: 16px 12px;
+  }
+
+  .agentCard {
+    padding: 9px 10px;
+    margin-bottom: 7px;
+  }
+
+  .header h1 {
+    font-size: 40px;
+  }
+
+  .chatBox {
+    padding: 24px clamp(16px, 2.4vw, 34px);
+  }
+
+  .statusPanel {
+    max-height: 100vh;
+  }
+
+  .statusModule {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .commandTaskCard {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1120px) and (min-width: 861px) {
+  .layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .statusPanel {
+    display: none;
+  }
+
+  .bubble,
+  .bubble.jarvis {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 860px) {
+  .inputArea {
+    position: sticky;
+    bottom: 0;
+  }
+
+  .sidebar {
+    max-height: 42vh;
+  }
+
+  .statusPanel {
+    max-height: none;
+  }
+}
