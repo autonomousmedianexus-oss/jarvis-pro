@@ -181,3 +181,11 @@ Phase 2.6 macht Jarvis-Web zur zentralen Agenten-Arbeitsoberfläche: Nutzer spre
 - Codex CTO ist als Prompt-/PR-Workflow vorbereitet; direkte externe Ausführung ist nicht verbunden.
 - Keine Secrets, keine API-Keys und kein OpenAI-Key im Frontend.
 - Human Approval First: kritische Aktionen, externe Ausführung, Commits und PRs brauchen menschliches GO.
+
+## Phase 2.7 – Manus Web Operator + MCP Governance
+
+Jarvis Pro bereitet Manus als COO Web Operator vor. Manus kann lokal als Briefing-/Research-Ziel für Webseitenanalyse, Geschäftsmodell-Recherche, Monetarisierungsideen, UX-Flows, Landing-Page-Anforderungen, SaaS-Ideenvalidierung, Sprintplanung und Codex-Folgeaufträge modelliert werden.
+
+Human Approval First bleibt verbindlich: keine Logins, Käufe, Zahlungen, Account-Änderungen, Uploads, Löschungen, Vertragsabschlüsse, Code-Generierung, Commit/PR oder Deploy/Merge ohne explizites menschliches GO. Es werden keine Secrets, API-Keys oder Passwörter im Frontend oder Code gespeichert. Fremder geschützter/proprietärer Code darf nicht kopiert werden; Codex muss eigene Umsetzungen bauen.
+
+Die externe Manus-Integration ist noch nicht verbunden. Jarvis-Web zeigt deshalb nur lokale Vorbereitung, Tool-Registry-Status, Freigabemarkierungen und kopierbare Briefings/Prompts an und behauptet nicht, Manus habe eine Webseite extern geprüft.

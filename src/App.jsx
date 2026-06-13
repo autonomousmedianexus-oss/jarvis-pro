@@ -11,6 +11,68 @@ const ROLES = {
   HUMAN_OWNER: { label: "Mensch", state: "ENTSCHEIDET" },
 };
 
+
+
+const MANUS_WEB_CAPABILITIES = [
+  "business_model_research",
+  "website_review",
+  "competitor_scan",
+  "monetization_analysis",
+  "ux_flow_analysis",
+  "landing_page_requirements",
+  "saas_idea_validation",
+  "task_breakdown",
+  "codex_prompt_preparation",
+  "progress_report",
+  "blocker_detection",
+];
+
+const APPROVAL_LEVELS = [
+  { id: "research_only", label: "Recherche erlaubt", rule: "Manus darf öffentlich zugängliche Informationen analysieren." },
+  { id: "login_required", label: "Login nur nach GO", rule: "Anmelden oder Account-Zugriff nur nach expliziter menschlicher Freigabe." },
+  { id: "external_action", label: "Externe Aktionen nur nach GO", rule: "Klicks mit Wirkung, Änderungen, Käufe, Uploads oder Vertragsaktionen sind verboten, bis der Owner zustimmt." },
+  { id: "code_generation", label: "Code vorbereiten", rule: "Codex darf technische Umsetzung nur als freigegebenen Auftrag vorbereiten." },
+  { id: "commit_pr", label: "Commit + PR", rule: "Commit und PR nur nach GO; nicht mergen." },
+  { id: "merge_deploy", label: "Merge/Deploy nur Mensch", rule: "Merge, Deploy und produktive Freigaben bleiben ausschließlich beim Menschen." },
+];
+
+const MANUS_WEB_ALLOWED_ACTIONS = [
+  "Öffentlich zugängliche Webseiten und Märkte analysieren",
+  "Geschäftsmodelle, Zielgruppen, Angebote und Monetarisierung strukturieren",
+  "Chancen, Risiken, technische Anforderungen und MVP-Scope dokumentieren",
+  "Codex-Aufträge, Sprintpläne, Blocker und Rückfragen vorbereiten",
+];
+
+const MANUS_WEB_FORBIDDEN_ACTIONS = [
+  "Keine Logins, Account-Änderungen, Käufe, Zahlungen oder Vertragsabschlüsse ohne explizites GO",
+  "Keine Daten löschen, Uploads auslösen oder rechtlich/finanziell bindende Aktionen ausführen",
+  "Keine geschützten, proprietären Inhalte oder fremden Code kopieren",
+  "Keine externe Manus-Ausführung behaupten, solange keine echte Integration verbunden ist",
+];
+
+const TOOL_REGISTRY = [
+  { name: "create_manus_web_research_task", mode: "prepared" },
+  { name: "copy_manus_web_research_brief", mode: "local" },
+  { name: "mark_research_approved", mode: "local" },
+  { name: "mark_login_approved", mode: "local" },
+  { name: "attach_manus_report", mode: "prepared" },
+  { name: "generate_codex_prompt_from_manus_report", mode: "local" },
+  { name: "prepare_monetization_sprint", mode: "prepared" },
+  { name: "export_research_task_state", mode: "local" },
+];
+
+const MANUS_WEB_STATUS_VALUES = [
+  "draft",
+  "needs_approval",
+  "approved_for_research",
+  "approved_for_login",
+  "in_research",
+  "report_ready",
+  "codex_prompt_ready",
+  "blocked",
+  "done",
+];
+
 const COMMAND_MATCHERS = [
   {
     role: "CTO_CODEX",
@@ -24,7 +86,7 @@ const COMMAND_MATCHERS = [
     category: "project_management",
     priority: "mittel",
     nextAction: "Manus-COO Briefing und Task-Breakdown vorbereiten.",
-    terms: ["manus", "sprint", "plan", "projektmanagement", "aufgaben", "roadmap"],
+    terms: ["manus", "sprint", "plan", "projektmanagement", "aufgaben", "roadmap", "webseite", "geschäftsidee", "monetarisierung", "monetization", "business model", "landing page", "competitor"],
   },
   {
     role: "CSO_CLAUDE",
@@ -110,7 +172,7 @@ function generateExecutiveDecision(sourceMessage, context = {}) {
   const recommendedRoles = matchedRoutes.length > 0 ? matchedRoutes.map((route) => route.role) : ["CEO_CHATGPT"];
   const technical = recommendedRoles.includes("CTO_CODEX");
   const operational = recommendedRoles.includes("COO_MANUS");
-  const riskTerms = ["ändern", "deploy", "commit", "pr", "kosten", "budget", "löschen", "kritisch", "api", "extern"];
+  const riskTerms = ["ändern", "deploy", "commit", "pr", "kosten", "budget", "löschen", "kritisch", "api", "extern", "login", "zahlung", "kauf", "vertrag"];
   const riskLevel = technical || includesAny(normalized, riskTerms) ? "mittel" : "niedrig";
   const requiresHumanApproval = recommendedRoles.some((role) => EXTERNAL_EXECUTION_ROLES.has(role)) || includesAny(normalized, HUMAN_APPROVAL_TERMS) || riskLevel !== "niedrig";
   const priority = includesAny(normalized, ["go", "dringend", "hoch", "sprint", "codex", "manus"]) ? "hoch" : "mittel";
@@ -137,17 +199,84 @@ function generateExecutiveDecision(sourceMessage, context = {}) {
   };
 }
 
+
+function isManusWebResearchIntent(text) {
+  const normalized = text.toLowerCase();
+  return includesAny(normalized, ["webseite", "website", "url", "geschäftsidee", "business", "monetarisierung", "monetization", "saas", "landing page", "competitor", "wettbewerb"]);
+}
+
+function extractTargetUrl(text) {
+  return text.match(/https?:\/\/[^\s)]+/i)?.[0] || "vom Owner nachreichen lassen";
+}
+
+function createManusWebResearchTask(sourceMessage, sequence, executiveDecision) {
+  return {
+    id: `MANUS-WEB-${String(sequence).padStart(3, "0")}`,
+    type: "MANUS_WEB_RESEARCH_TASK",
+    title: `Manus Web Research ${String(sequence).padStart(2, "0")}`,
+    targetUrl: extractTargetUrl(sourceMessage),
+    businessModelHypothesis: "Hypothese aus Nutzerauftrag ableiten; falls unklar, Rückfrage an den Menschen formulieren.",
+    researchGoal: "Webseite/Geschäftsidee prüfen und Monetarisierungsmöglichkeiten mit Risiken, MVP und Codex-Folgeauftrag strukturieren.",
+    allowedActions: MANUS_WEB_ALLOWED_ACTIONS,
+    forbiddenActions: MANUS_WEB_FORBIDDEN_ACTIONS,
+    requiredApprovalBeforeLogin: true,
+    requiredApprovalBeforeExternalAction: true,
+    expectedOutput: "Kurzfazit, Geschäftsmodell, Zielgruppe, Angebot, Monetarisierung, Traffic-Kanäle, technische Anforderungen, Risiken, MVP-Vorschlag, Codex-Auftrag, nächste Entscheidung.",
+    codexFollowUpExpected: true,
+    status: "needs_approval",
+    priority: executiveDecision.priority,
+    riskLevel: executiveDecision.riskLevel === "niedrig" ? "mittel" : executiveDecision.riskLevel,
+  };
+}
+
+function generateManusReportTemplate(task) {
+  return `Manus-Report-Format für ${task?.id || "MANUS_WEB_RESEARCH_TASK"}
+- Kurzfazit:
+- Geschäftsmodell:
+- Zielgruppe:
+- Angebot:
+- Monetarisierung:
+- Traffic-Kanäle:
+- technische Anforderungen:
+- Risiken:
+- MVP-Vorschlag:
+- Codex-Auftrag:
+- nächste Entscheidung für den Menschen:`;
+}
+
 function generateManusBriefing(task, executiveDecision, context = {}) {
   if (!task) return "";
   const codexTask = context.tasks?.find((item) => item.assignedRole === "CTO_CODEX" && item.sourceMessage === task.sourceMessage);
   const codexFollowUp = codexTask
     ? "Codex-Folgeauftrag: technische Prüfung vorbereiten; keine Änderung, kein Commit, kein PR ohne menschliches GO."
     : "Mögliche Codex-Folgeaufgabe: technische Prüfung nur als Entwurf anlegen, falls der Owner sie freigibt.";
+  const webTask = task.webResearchTask;
+  const webSection = webTask ? `
+MANUS_WEB_RESEARCH_TASK:
+- id: ${webTask.id}
+- title: ${webTask.title}
+- targetUrl: ${webTask.targetUrl}
+- businessModelHypothesis: ${webTask.businessModelHypothesis}
+- researchGoal: ${webTask.researchGoal}
+- allowedActions: ${webTask.allowedActions.join("; ")}
+- forbiddenActions: ${webTask.forbiddenActions.join("; ")}
+- requiredApprovalBeforeLogin: ${webTask.requiredApprovalBeforeLogin}
+- requiredApprovalBeforeExternalAction: ${webTask.requiredApprovalBeforeExternalAction}
+- expectedOutput: ${webTask.expectedOutput}
+- codexFollowUpExpected: ${webTask.codexFollowUpExpected}
+- status: ${webTask.status}
+- priority: ${webTask.priority}
+- riskLevel: ${webTask.riskLevel}
+
+Manus-Report-Format:
+${generateManusReportTemplate(webTask)}
+` : "";
   return `Rolle: COO Manus
 Projekt: PROJEKT JARVIS
 CEO-Kontext: ${executiveDecision.intentSummary} · ${executiveDecision.strategicAssessment}
 Ziel: ${task.description}
 Kontext: Jarvis-Web ist Oberfläche und Kommandozentrale. CEO ChatGPT priorisiert; Command Bus routet; Mensch entscheidet.
+${webSection}
 Aufgaben:
 - Sprintplan und Task-Breakdown strukturieren
 - operative Abhängigkeiten, Blocker und Rückfragen sichtbar machen
@@ -157,24 +286,30 @@ Priorität: ${task.priority}
 Abhängigkeiten: CEO Decision ${executiveDecision.id}; Human Approval; externe Manus-Integration nicht verbunden.
 Offene Fragen: Welche Ziele, Fristen, Ressourcen und Akzeptanzkriterien muss der Mensch bestätigen?
 Gewünschter Output: Sprintplan, Task-Liste, Blocker-Liste, Rückfragen und vorbereitete Codex-Folgeaufgabe.
-Freigabe-Regeln: Status bleibt wartet auf Freigabe/freigegeben lokal. Keine externe Manus-Ausführung vortäuschen.
+Freigabe-Regeln: research_only erlaubt nur Analyse. Login, externe Aktionen, Code-Generation, Commit/PR und Merge/Deploy brauchen separates GO. Status bleibt lokal; keine externe Manus-Ausführung vortäuschen.
+Sicherheitsregeln: Keine Secrets, keine API-Keys im Frontend, keine Passwörter im Code, keine geschützten/proprietären Inhalte oder fremden Code kopieren.
 Mögliche Codex-Folgeaufgabe: ${codexFollowUp}`;
 }
 
-function generateCodexPrompt(task, executiveDecision) {
+function generateCodexPrompt(task, executiveDecision, context = {}) {
   if (!task) return "";
+  const manuscript = context.manusReport || (task.webResearchTask ? generateManusReportTemplate(task.webResearchTask) : "Noch kein externer Manus-Report angehängt; Briefing/Report-Template als Grundlage nutzen.");
   return `Rolle: CTO Codex
 CEO-Kontext: ${executiveDecision.intentSummary} · ${executiveDecision.strategicAssessment}
 Ziel: ${task.description}
-Kontext: Jarvis Pro Phase 2.6; CEO ChatGPT steht vor Command Bus und Agentenrouting.
+Kontext: Jarvis Pro Phase 2.7; CEO ChatGPT steht vor Command Bus/MCP Gateway/Tool Registry und steuert Manus sowie Codex.
+Manus-Ergebnis: ${manuscript}
+Gewünschte Umsetzung: technische Anforderungen aus dem Manus-Report originär/eigenständig umsetzen; keine fremden geschützten Inhalte kopieren.
 Dateien/Module falls ableitbar: Frontend src/App.jsx, src/App.css; Dokumentation README.md und docs/*; keine n8n-Änderung ohne Notwendigkeit.
 Anforderungen:
 - technische Prüfung strukturieren
 - betroffene Dateien/Module benennen
+- UI/UX-Anforderungen aus Manus ableiten
 - sichere Umsetzungsschritte vorschlagen
+- Human Approval First sichtbar halten
 Nicht brechen: n8n-Vertrag bleibt { chatInput: userMessage } und data.output; Voice First bleibt aktiv; keine Secrets ins Frontend.
 Tests: npm run lint, npm run build, Secret Scan.
-Secret-Regeln: Keine API-Keys, Passwörter oder Tokens einfügen.
+Secret-Regeln: Keine API-Keys, Passwörter oder Tokens einfügen; keine Secrets ins Frontend; keine geschützten Inhalte kopieren; eigene Umsetzung bauen.
 Nach Umsetzung: Commit + PR erstellen, nicht mergen.
 Warten auf menschliche Prüfung: Keine Änderung, kein Commit, kein PR ohne menschliches GO.`;
 }
@@ -203,6 +338,9 @@ function createCommandTask(sourceMessage, route, commandNumber, taskOffset, norm
     createdAt: new Date().toISOString(),
     category: route.category,
     externalStatus: "extern nicht verbunden",
+    webResearchTask: route.role === "COO_MANUS" && isManusWebResearchIntent(sourceMessage)
+      ? createManusWebResearchTask(sourceMessage, sequence, executiveDecision)
+      : null,
   };
 }
 
@@ -241,7 +379,12 @@ function formatStatus(status) {
     blocked: "blockiert",
     done: "erledigt",
     approved_local: "freigegeben lokal",
+    approved_for_research: "für Recherche freigegeben",
+    approved_for_login: "Login freigegeben",
     ready_for_external_handoff: "bereit für externe Übergabe",
+    in_research: "in Recherche",
+    report_ready: "Report bereit",
+    codex_prompt_ready: "Codex-Prompt bereit",
   };
 
   return labels[status] || status;
@@ -304,7 +447,9 @@ function App() {
   const sendMessageRef = useRef(null);
   const latestCommand = commands.at(-1);
   const latestDecision = executiveDecisions.at(-1);
-  const recentCommands = commands.slice(-4).reverse();
+  const visibleCommandTasks = commands.slice(-4).reverse();
+  const visibleCommandTaskCount = visibleCommandTasks.length;
+  const recentCommands = visibleCommandTasks;
   const latestManusTask = [...commands].reverse().find((command) => command.assignedRole === "COO_MANUS");
   const latestCodexTask = [...commands].reverse().find((command) => command.assignedRole === "CTO_CODEX");
   const latestManusDecision = executiveDecisions.find((decision) => decision.id === latestManusTask?.executiveDecisionId) || latestDecision;
@@ -771,6 +916,9 @@ function App() {
             <li>n8n: aktiv</li>
             <li>Voice/TTS: {ttsProvider} oder Browser Fallback</li>
             <li>Command Bus: aktiv</li>
+            <li>Manus Web Operator: vorbereitet; externe Ausführung nicht verbunden</li>
+            <li>MCP Gateway: vorbereitet; Tool Registry lokal sichtbar</li>
+            <li>Browser/Web-Login: nur mit expliziter Freigabe</li>
             <li>Manus COO: lokale Delegation aktiv, externe Integration nicht verbunden</li>
             <li>Codex CTO: PR-/Prompt-Workflow vorbereitet, direkte externe Ausführung nicht verbunden</li>
             <li>GitHub: Repo-Kontext vorbereitet</li>
@@ -778,10 +926,20 @@ function App() {
           </ul>
         </div>
 
+        <div className="statusModule integrationMap">
+          <p>Manus Web Governance</p>
+          <strong>COO WEB OPERATOR PREPARED</strong>
+          <small>Capabilities: {MANUS_WEB_CAPABILITIES.join(", ")}</small>
+          <small>Statuswerte: {MANUS_WEB_STATUS_VALUES.join(", ")}</small>
+          <ul>
+            {APPROVAL_LEVELS.map((level) => <li key={level.id}>{level.label}: {level.rule}</li>)}
+          </ul>
+        </div>
+
         <div className="statusModule commandBus">
           <p>CEO Command Bus</p>
           <strong>
-            {commands.length} {commands.length === 1 ? "Aufgabe" : "Aufgaben"} erkannt
+            {visibleCommandTaskCount} {visibleCommandTaskCount === 1 ? "Aufgabe" : "Aufgaben"} sichtbar
           </strong>
           {latestCommand ? (
             <div className="commandDetails">
@@ -805,12 +963,14 @@ function App() {
         <div className="statusModule manusPanel">
           <p>COO Manus</p>
           <strong>DELEGATION AKTIV</strong>
-          <small>Lokale COO-Delegation: aktiv · Externe Manus-Integration: nicht verbunden / vorbereitet · Ausführung: wartet auf menschliche Freigabe</small>
+          <small>Status: Delegation aktiv · Web Operator: vorbereitet · Externe Manus-Integration: nicht verbunden / Freigabe erforderlich · Ausführung: wartet auf menschliche Freigabe</small>
           {latestManusTask ? (
             <div className="manusDetails">
               <span>Letzter Task: {latestManusTask.title}</span>
               <span>Status: {formatStatus(latestManusTask.status)} · {latestManusTask.externalStatus}</span>
               <span>Briefing verfügbar: ja</span>
+              <span>Web Research Task: {latestManusTask.webResearchTask?.id || "nicht erforderlich"}</span>
+              <span>Browser/Login: nur mit expliziter Freigabe · Externe Ausführung: nicht verbunden</span>
               <details className="briefingBox">
                 <summary>Manus-Briefing anzeigen</summary>
                 <pre className="promptBox">{latestManusBriefing}</pre>
@@ -818,11 +978,14 @@ function App() {
               <button className="miniAction" onClick={() => copyToClipboard(latestManusBriefing, "Manus-Auftrag kopiert")}>
                 Manus-Auftrag kopieren
               </button>
-              <button className="miniAction" onClick={() => markTask(latestManusTask.id, "approved_local")}>
-                Freigabe lokal markieren
+              <button className="miniAction" onClick={() => markTask(latestManusTask.id, "approved_for_research")}>
+                Research-Freigabe lokal markieren
               </button>
-              <button className="miniAction" onClick={() => markTask(latestManusTask.id, "ready_for_external_handoff")}>
-                Als bereit für externe Übergabe markieren
+              <button className="miniAction" onClick={() => markTask(latestManusTask.id, "approved_for_login")}>
+                Login-Freigabe lokal markieren
+              </button>
+              <button className="miniAction" onClick={() => copyToClipboard(generateCodexPrompt(latestManusTask, latestManusDecision, { tasks: commands }), "Codex-Folgeauftrag aus Manus kopiert")}>
+                Codex-Folgeauftrag erzeugen/kopieren
               </button>
               <small>{localApprovals[latestManusTask.id] ? "Status lokal geändert – keine externe Ausführung gestartet." : "Status: wartet auf Freigabe"}</small>
             </div>
@@ -859,6 +1022,14 @@ function App() {
           <p>Chat Session</p>
           <strong>{chat.length} Messages</strong>
           <small>{loading ? "Analysis stream pending" : "Console idle"}</small>
+        </div>
+
+        <div className="statusModule integrationMap">
+          <p>MCP Gateway / Tool Registry</p>
+          <strong>PREPARED · MCP READY</strong>
+          <ul>
+            {TOOL_REGISTRY.map((tool) => <li key={tool.name}>{tool.name}: {tool.mode}</li>)}
+          </ul>
         </div>
 
         <div className="statusModule futureSystems">

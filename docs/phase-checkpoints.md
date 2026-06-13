@@ -60,3 +60,12 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - Agenten-Brücke / Integrationsstatus ergänzt.
 - Responsive Command-Center-Layout für Laptop-Breiten verbessert.
 - Human Approval First bestätigt.
+
+## v1.5 / Phase 2.7 — Manus Web Operator + MCP Governance
+
+- Manus als COO Web Operator mit Capabilities für Geschäftsmodell-Recherche, Website Review, Monetarisierungsanalyse, UX-Flows, SaaS-Ideenvalidierung und Codex-Prompt-Vorbereitung modelliert.
+- `MANUS_WEB_RESEARCH_TASK` als lokaler Task-Typ mit Freigabe-, Risiko-, Status- und Codex-Follow-up-Feldern vorbereitet.
+- Monetization Research Pipeline von Nutzerauftrag über CEO Executive Decision, Command Bus, Manus-Briefing und Codex-Folgeauftrag dokumentiert.
+- MCP Gateway / Tool Registry für Manus-Web-Operator-Tools vorbereitet; externe Manus-Ausführung bleibt ehrlich als nicht verbunden markiert.
+- Human Approval First erweitert: Research-only, Login, External Action, Code Generation, Commit/PR und Merge/Deploy sind getrennte Freigabeebenen.
+- n8n-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.
