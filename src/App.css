@@ -395,3 +395,446 @@ body {
   0%, 100% { opacity: 0.2; }
   50% { opacity: 1; }
 }
+.brandPanel {
+  position: relative;
+  padding: 16px 16px 18px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(103, 232, 249, 0.45);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(15, 23, 42, 0.86)),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.16), transparent 32%);
+  box-shadow:
+    0 0 28px rgba(0, 220, 255, 0.22),
+    inset 0 0 30px rgba(0, 220, 255, 0.08);
+  overflow: hidden;
+}
+
+.brandPanel::before,
+.statusModule::before,
+.welcome::before,
+.bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(120deg, transparent, rgba(125, 211, 252, 0.16), transparent);
+  transform: translateX(-100%);
+  animation: hudSweep 6s linear infinite;
+  pointer-events: none;
+}
+
+.brandPanel .eyebrow,
+.welcomeKicker,
+.messageLabel,
+.statusModule p {
+  color: #67e8f9;
+  font-size: 11px;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+}
+
+.brandPanel h2 {
+  margin: 6px 0 4px;
+}
+
+.brandPanel small {
+  color: rgba(224, 251, 255, 0.72);
+}
+
+.sidebar {
+  width: 318px;
+  overflow-y: auto;
+}
+
+.newChat {
+  text-transform: uppercase;
+  letter-spacing: 1.8px;
+  font-weight: 700;
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.34), rgba(37, 99, 235, 0.18)),
+    rgba(14, 165, 233, 0.16);
+}
+
+.sideSection {
+  margin-bottom: 22px;
+}
+
+.sideSection p,
+.sideFooter p {
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.agentCard {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 13px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(0, 220, 255, 0.22);
+  border-radius: 14px;
+  background:
+    linear-gradient(90deg, rgba(8, 47, 73, 0.76), rgba(15, 23, 42, 0.82)),
+    rgba(15, 23, 42, 0.75);
+  box-shadow: inset 3px 0 0 rgba(125, 211, 252, 0.28);
+}
+
+.agentCard span {
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: #e0f7ff;
+  font-weight: 700;
+}
+
+.agentCard small,
+.diagnosticRow b {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.agentCard.active {
+  border-color: rgba(34, 197, 94, 0.75);
+  box-shadow:
+    0 0 22px rgba(34, 197, 94, 0.16),
+    inset 3px 0 0 rgba(34, 197, 94, 0.9);
+}
+
+.agentCard.active small,
+.statusModule.online strong,
+.statusModule.primary strong {
+  color: #86efac;
+  text-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+}
+
+.agentCard.future {
+  border-color: rgba(168, 85, 247, 0.58);
+  box-shadow: inset 3px 0 0 rgba(168, 85, 247, 0.72);
+}
+
+.agentCard.future small {
+  color: #d8b4fe;
+}
+
+.agentCard.planned {
+  opacity: 0.82;
+}
+
+.sideFooter {
+  margin-top: 18px;
+}
+
+.statusPanel {
+  width: 292px;
+  height: 100vh;
+  padding: 24px 18px;
+  background:
+    linear-gradient(180deg, rgba(2, 6, 23, 0.96), rgba(8, 47, 73, 0.64)),
+    rgba(2, 6, 23, 0.94);
+  border-left: 1px solid rgba(0, 220, 255, 0.38);
+  box-shadow: -18px 0 36px rgba(0, 220, 255, 0.14);
+  z-index: 5;
+  overflow-y: auto;
+}
+
+.statusModule {
+  position: relative;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(0, 220, 255, 0.26);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(103, 232, 249, 0.12), transparent 34%),
+    rgba(15, 23, 42, 0.68);
+  box-shadow:
+    0 0 20px rgba(0, 220, 255, 0.14),
+    inset 0 0 24px rgba(0, 220, 255, 0.06);
+  overflow: hidden;
+}
+
+.statusModule strong {
+  display: block;
+  margin: 8px 0 6px;
+  color: #e0f7ff;
+  letter-spacing: 1px;
+}
+
+.statusModule small,
+.statusModule li,
+.diagnosticRow span {
+  color: rgba(224, 251, 255, 0.68);
+  font-size: 12px;
+}
+
+.statusModule ul {
+  padding-left: 18px;
+  margin: 10px 0 0;
+}
+
+.diagnosticRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(125, 211, 252, 0.14);
+}
+
+.diagnosticRow:last-child {
+  border-bottom: 0;
+}
+
+.chatBox {
+  padding: 38px clamp(26px, 4vw, 70px);
+  background:
+    linear-gradient(rgba(125, 211, 252, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+.chatBox::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar,
+.statusPanel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chatBox::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb,
+.statusPanel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(103, 232, 249, 0.35);
+}
+
+.welcome {
+  position: relative;
+  max-width: 720px;
+  margin: 70px auto 0;
+  padding: 30px;
+  border: 1px solid rgba(103, 232, 249, 0.5);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(8, 47, 73, 0.74), rgba(2, 6, 23, 0.82)),
+    radial-gradient(circle at center, rgba(14, 165, 233, 0.16), transparent 42%);
+  box-shadow:
+    0 0 46px rgba(0, 220, 255, 0.26),
+    inset 0 0 40px rgba(0, 220, 255, 0.08);
+  overflow: hidden;
+}
+
+.welcome h3 {
+  margin: 10px 0;
+  color: #e0fbff;
+  font-size: clamp(28px, 4vw, 46px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 24px rgba(0, 220, 255, 0.9);
+}
+
+.welcome p {
+  max-width: 620px;
+  margin: 0 auto 22px;
+  color: rgba(224, 251, 255, 0.78);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.welcomeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.welcomeGrid span {
+  padding: 10px;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.52);
+  color: #67e8f9;
+  font-size: 11px;
+  letter-spacing: 1.8px;
+}
+
+.messageRow {
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.jarvisRow {
+  padding-right: min(8vw, 80px);
+}
+
+.userRow {
+  padding-left: min(16vw, 180px);
+}
+
+.avatar {
+  min-width: 48px;
+  width: 48px;
+  height: 48px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.bubble {
+  position: relative;
+  max-width: min(860px, 86%);
+  padding: 18px 22px 20px;
+  border-radius: 22px;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow: hidden;
+}
+
+.bubble.jarvis {
+  max-width: min(980px, 92%);
+  background:
+    linear-gradient(135deg, rgba(8, 47, 73, 0.9), rgba(15, 23, 42, 0.92)),
+    rgba(15, 23, 42, 0.86);
+  border-color: rgba(103, 232, 249, 0.72);
+  font-size: 16px;
+}
+
+.bubble.user {
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.82), rgba(14, 165, 233, 0.54)),
+    rgba(37, 99, 235, 0.72);
+}
+
+.messageLabel {
+  display: block;
+  margin-bottom: 10px;
+  color: #93c5fd;
+}
+
+.messageText {
+  color: inherit;
+}
+
+.analyzing {
+  min-width: 320px;
+}
+
+.analyzerGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.analyzerGrid i {
+  height: 38px;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(103, 232, 249, 0.28), rgba(14, 165, 233, 0.04));
+  animation: analyzerPulse 1.25s ease-in-out infinite;
+}
+
+.analyzerGrid i:nth-child(2) { animation-delay: 0.15s; }
+.analyzerGrid i:nth-child(3) { animation-delay: 0.3s; }
+.analyzerGrid i:nth-child(4) { animation-delay: 0.45s; }
+
+.analyzerText {
+  color: #e0f7ff;
+  letter-spacing: 1px;
+}
+
+.inputArea {
+  padding: 18px 22px 20px;
+  box-shadow: 0 -14px 34px rgba(0, 220, 255, 0.1);
+}
+
+.inputArea textarea {
+  min-height: 58px;
+  line-height: 1.45;
+}
+
+.inputArea button {
+  text-transform: uppercase;
+  letter-spacing: 1.6px;
+  font-weight: 800;
+}
+
+@keyframes hudSweep {
+  0%, 46% { transform: translateX(-110%); }
+  56%, 100% { transform: translateX(110%); }
+}
+
+@keyframes analyzerPulse {
+  0%, 100% { opacity: 0.32; transform: scaleY(0.72); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+@media (max-width: 1280px) {
+  .statusPanel {
+    display: none;
+  }
+
+  .sidebar {
+    width: 292px;
+  }
+}
+
+@media (max-width: 860px) {
+  body {
+    overflow: auto;
+  }
+
+  .layout {
+    min-height: 100vh;
+    height: auto;
+    flex-direction: column;
+  }
+
+  .sidebar,
+  .statusPanel,
+  .app {
+    width: 100%;
+    height: auto;
+  }
+
+  .sidebar,
+  .statusPanel {
+    display: block;
+  }
+
+  .app {
+    min-height: 76vh;
+  }
+
+  .statusBar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .header h1 {
+    font-size: 34px;
+    letter-spacing: 6px;
+  }
+
+  .hudCore {
+    width: 300px;
+    height: 300px;
+  }
+
+  .messageRow,
+  .jarvisRow,
+  .userRow {
+    padding: 0;
+  }
+
+  .bubble,
+  .bubble.jarvis {
+    max-width: 100%;
+  }
+
+  .welcomeGrid {
+    grid-template-columns: 1fr;
+  }
+}
