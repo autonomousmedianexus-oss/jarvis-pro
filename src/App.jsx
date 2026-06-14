@@ -248,7 +248,7 @@ const COMMAND_MATCHERS = [
     category: "project_management",
     priority: "mittel",
     nextAction: "Manus-COO Briefing und Task-Breakdown vorbereiten.",
-    terms: ["manus", "sprint", "plan", "projektmanagement", "aufgaben", "roadmap", "webseite", "geschäftsidee", "monetarisierung", "monetization", "business model", "landing page", "competitor"],
+    terms: ["manus", "research", "recherche", "operativ", "sprint", "plan", "projektmanagement", "aufgaben", "roadmap", "webseite", "geschäftsidee", "monetarisierung", "monetization", "business model", "landing page", "competitor"],
   },
   {
     role: "CSO_CLAUDE",
@@ -302,6 +302,7 @@ const VOICE_STATUS_LABELS = {
   blocked: "blockiert",
   fallback: "fallback",
   error: "fehler",
+  stopped: "gestoppt",
 };
 
 function includesAny(text, terms) {
@@ -334,16 +335,18 @@ function getConversationIntent(text) {
   const explicitDelegationTerms = [
     "erstelle eine ceo-einschätzung", "erstelle eine ceo einschätzung", "ceo-einschätzung erstellen", "ceo einschätzung erstellen",
     "erstelle eine executive summary", "executive summary erstellen",
-    "bereite manus vor", "erstelle einen manustask", "erstelle einen manus task", "gib das an manus weiter",
-    "starte research", "go research", "go manus",
-    "mach daraus einen operativen auftrag", "prüfe diese idee operativ mit manus", "prüf diese idee operativ mit manus",
+    "bereite manus vor", "bereite coo manus vor", "erstelle einen manustask", "erstelle einen manus task", "gib das an manus weiter",
+    "starte research", "go research", "go manus", "research-go", "research go",
+    "mach daraus einen operativen auftrag", "prüfe operativ mit manus", "prüfe diese idee operativ mit manus", "prüf diese idee operativ mit manus",
     "erstelle codex-auftrag", "bereite umsetzung vor", "research-go", "manus-task", "manus task",
   ];
   const ambiguousTerms = ["mach das", "tu das", "setz das um", "starte das", "weiter damit"];
 
   if (includesAny(normalized, statusTerms)) return "status";
-  if (includesAny(normalized, ambiguousTerms) && normalized.length < 80) return "clarify";
   if (includesAny(normalized, explicitDelegationTerms)) return "delegation";
+  if (/\b(bereite|gib|erstelle|prüfe|pruefe|starte)\b.{0,80}\b(manus|research|recherche|operativ)\b/.test(normalized)) return "delegation";
+  if (/\b(manus|research|recherche)\b.{0,80}\b(vor|weiter|task|auftrag|prüf|pruef|go)\b/.test(normalized)) return "delegation";
+  if (includesAny(normalized, ambiguousTerms) && normalized.length < 80) return "clarify";
   return "conversation";
 }
 
@@ -405,7 +408,7 @@ function createManusTaskModel(sourceMessage, sequence) {
     allowedActions: ["Öffentliche Recherche vorbereiten", "Analyseauftrag formulieren", "Wettbewerbsanalyse vorbereiten", "Website-Prüfung vorbereiten", "Codex-Prompt später vorbereiten"],
     blockedActions: ["Login", "Account-Zugriff", "Formulare absenden", "Käufe", "Zahlungen", "Uploads", "externe Aktionen mit Wirkung", "Merge", "Deploy"],
     approvalRequired: true,
-    requiredApprovalType: "Research-GO; Login-GO und Action-GO separat erforderlich",
+    requiredApprovalType: "Research-GO",
     expectedOutput: "ManusReport mit status, summary, findings, risks, recommendation, sourcesChecked, blockers, codexTaskDraft und approvalNeeded.",
     status: MANUS_TASK_STATUS,
     createdAt: now,
@@ -840,7 +843,6 @@ function App() {
   const [expandedMessages, setExpandedMessages] = useState({});
   const [localApprovals, setLocalApprovals] = useState(() => JSON.parse(localStorage.getItem("jarvis.approvals") || "{}"));
   const [copyNotice, setCopyNotice] = useState("");
-  const [time, setTime] = useState(new Date());
   const [executiveDecisions, setExecutiveDecisions] = useState(() => JSON.parse(localStorage.getItem("jarvis.executiveDecisions") || "[]"));
   const [commands, setCommands] = useState(() => JSON.parse(localStorage.getItem("jarvis.commandTasks") || "[]"));
   const [manualGitHubStatus, setManualGitHubStatus] = useState(() => JSON.parse(localStorage.getItem("jarvis.githubReturnChannel") || "null") || createGitHubReturnChannelStatus());
@@ -849,6 +851,9 @@ function App() {
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
   const sendMessageRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const activeAudioRef = useRef(null);
+  const stoppedRef = useRef(false);
   const latestDecision = executiveDecisions.at(-1);
   const visibleCommandTasks = commands.slice(-4).reverse();
   const visibleCommandTaskCount = visibleCommandTasks.length;
@@ -919,12 +924,13 @@ function App() {
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
   const DIRECT_CHATGPT_URL = "/api/chatgpt";
 
-  async function requestChatGptAnswer(userMessage, mode = "conversation") {
+  async function requestChatGptAnswer(userMessage, mode = "conversation", signal) {
     try {
       const directResponse = await fetch(DIRECT_CHATGPT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMessage, mode }),
+        signal,
       });
 
       if (!directResponse.ok) throw new Error(`Direct CEO ChatGPT unavailable: ${directResponse.status}`);
@@ -938,6 +944,7 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatInput: userMessage }),
+        signal,
       });
 
       const data = await response.json();
@@ -961,6 +968,7 @@ function App() {
       const speakNextChunk = () => {
         const nextChunk = voiceQueueRef.current.shift();
         if (!nextChunk) {
+          activeAudioRef.current = null;
           setVoiceStatus("ready");
           return;
         }
@@ -1011,12 +1019,15 @@ function App() {
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
+      activeAudioRef.current = audio;
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
+        activeAudioRef.current = null;
         setVoiceStatus("ready");
       };
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
+        activeAudioRef.current = null;
         setTtsProvider("Browser Fallback");
         setVoiceStatus("fallback");
         speakWithBrowser(text);
@@ -1082,10 +1093,8 @@ function App() {
   }, [speak]);
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
     const wakeTimer = window.setTimeout(startWakeWordListener, 0);
     return () => {
-      clearInterval(timer);
       window.clearTimeout(wakeTimer);
       window.speechSynthesis?.cancel();
     };
@@ -1134,10 +1143,49 @@ function App() {
 
 
 
+  function stopCurrentActivity() {
+    stoppedRef.current = true;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    voiceQueueRef.current = [];
+    activeAudioRef.current?.pause();
+    activeAudioRef.current = null;
+    window.speechSynthesis?.cancel();
+    setLoading(false);
+    setVoiceStatus("stopped");
+  }
+
+  function startNewRequest() {
+    stopCurrentActivity();
+    stoppedRef.current = false;
+    setMessage("");
+    setExpandedMessages({});
+    setCopyNotice("");
+    setVoiceStatus("ready");
+  }
+
+  function resetConversation() {
+    stopCurrentActivity();
+    setMessage("");
+    setChat([]);
+    setCommands([]);
+    setExecutiveDecisions([]);
+    setLocalApprovals({});
+    setConversationMode("Gespräch");
+    setManualGitHubStatus(createGitHubReturnChannelStatus());
+    localStorage.removeItem("jarvis.executiveDecisions");
+    localStorage.removeItem("jarvis.commandTasks");
+    localStorage.removeItem("jarvis.approvals");
+    localStorage.removeItem("jarvis.githubReturnChannel");
+  }
+
   async function sendMessage(customMessage) {
     const userMessage = customMessage || message;
     if (!userMessage.trim() || loading) return;
 
+    stoppedRef.current = false;
+    const requestController = new AbortController();
+    abortControllerRef.current = requestController;
     setMessage("");
     setChat((old) => [...old, { role: "user", text: userMessage }]);
     const conversationIntent = getConversationIntent(userMessage);
@@ -1162,11 +1210,13 @@ function App() {
       setLoading(true);
 
       try {
-        const { answer, ceoStatus } = await requestChatGptAnswer(userMessage, "conversation");
+        const { answer, ceoStatus } = await requestChatGptAnswer(userMessage, "conversation", requestController.signal);
+        if (stoppedRef.current || requestController.signal.aborted) return;
         setCeoConnectionStatus(ceoStatus);
         setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
         speak(answer);
       } catch (error) {
+        if (requestController.signal.aborted) return;
         console.error(error);
         setCeoConnectionStatus("failed");
         const fallbackAnswer = generateConversationalCeoReply(userMessage);
@@ -1187,12 +1237,15 @@ function App() {
     setLoading(true);
 
     try {
-      const { answer, ceoStatus } = await requestChatGptAnswer(userMessage, "delegation");
+      const { answer, ceoStatus } = await requestChatGptAnswer(userMessage, "delegation", requestController.signal);
+      if (stoppedRef.current || requestController.signal.aborted) return;
       setCeoConnectionStatus(ceoStatus);
 
-      setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
-      speak(answer);
+      const delegationSummary = `CEO Einschätzung: Auftrag ist klar genug für COO Manus. Ich habe einen ManusTask vorbereitet; Status ${draftedCommands.find((task) => task.assignedRole === "COO_MANUS")?.manusTask?.status || MANUS_TASK_STATUS}, Connector ${manusCapability.status}. Nächster Schritt: Research-GO prüfen und erst danach extern ausführen.\n\n${answer}`;
+      setChat((old) => [...old, { role: "jarvis", text: delegationSummary, summary: createVisibleSummary(delegationSummary) }]);
+      speak(delegationSummary);
     } catch (error) {
+      if (requestController.signal.aborted) return;
       console.error(error);
       setCeoConnectionStatus("failed");
       setChat((old) => [
@@ -1227,22 +1280,9 @@ function App() {
           <small>CEO Layer + Command Bus</small>
         </div>
 
-        <button
-          className="newChat"
-          onClick={() => {
-            setChat([]);
-            setCommands([]);
-            setExecutiveDecisions([]);
-            setLocalApprovals({});
-            localStorage.removeItem("jarvis.executiveDecisions");
-            localStorage.removeItem("jarvis.commandTasks");
-            localStorage.removeItem("jarvis.approvals");
-            setManualGitHubStatus(createGitHubReturnChannelStatus());
-            localStorage.removeItem("jarvis.githubReturnChannel");
-          }}
-        >
-          + Neuer Chat
-        </button>
+        <div className="newChat" aria-label="Kompakte Agentenleiste">
+          Agentenleiste
+        </div>
 
         <div className="sideSection">
           <p>EXECUTIVE BOARD</p>
@@ -1259,32 +1299,16 @@ function App() {
             <small>VORBEREITET</small>
           </div>
           <div className="agentCard prepared">
-            <span>CSO Claude</span>
-            <small>VORBEREITET</small>
-          </div>
-          <div className="agentCard planned">
-            <span>CFO Finance</span>
-            <small>GEPLANT</small>
+            <span>GitHub</span>
+            <small>{githubCapability.status}</small>
           </div>
         </div>
 
         <div className="sideSection automationSection">
           <p>AUTOMATION LAYER</p>
           <div className="agentCard active bridge">
-            <span>n8n Agent</span>
-            <small>AKTIV</small>
-          </div>
-          <div className="agentCard future">
-            <span>LangGraph</span>
-            <small>FUTURE</small>
-          </div>
-          <div className="agentCard planned">
-            <span>Research Agent</span>
-            <small>PLANNED</small>
-          </div>
-          <div className="agentCard planned">
-            <span>Memory Agent</span>
-            <small>PLANNED</small>
+            <span>n8n</span>
+            <small>FALLBACK</small>
           </div>
         </div>
 
@@ -1309,9 +1333,7 @@ function App() {
           <div className="statusBar">
             <span>CPU 12%</span>
             <span>RAM 31%</span>
-            <span>GPU 07%</span>
             <span>NET ONLINE</span>
-            <span>{time.toLocaleTimeString("de-CH")}</span>
             <span>VOICE {voiceStatusLabel.toUpperCase()}</span>
             <span>{CEO_CONNECTION_STATUS_LABELS[ceoConnectionStatus].toUpperCase()}</span>
             <span>MODUS: {conversationMode.toUpperCase()}</span>
@@ -1400,9 +1422,12 @@ function App() {
             rows="2"
           />
 
-          <button onClick={() => sendMessage()} disabled={loading}>
-            Senden
-          </button>
+          <div className="inputActions">
+            <button onClick={() => sendMessage()} disabled={loading}>Senden</button>
+            <button type="button" className="stopButton" onClick={stopCurrentActivity}>Stop</button>
+            <button type="button" className="secondaryButton" onClick={startNewRequest}>Neue Anfrage</button>
+            <button type="button" className="secondaryButton" onClick={resetConversation}>Konversation zurücksetzen</button>
+          </div>
         </footer>
       </main>
 
@@ -1428,7 +1453,7 @@ function App() {
           <small>Modus: {conversationMode}</small>
           <small>Jarvis → /api/chatgpt → OpenAI zuerst. Bei Nichtverfügbarkeit bleibt der bestehende n8n-Fallback mit {`{ chatInput: userMessage }`} und data.output aktiv.</small>
           {latestDecision ? (
-            <details className="briefingBox" open>
+            <details className="briefingBox" open={conversationMode === "Delegation"}>
               <summary>Executive Summary anzeigen</summary>
               <pre className="promptBox">{latestExecutiveSummary}</pre>
               <button className="miniAction" onClick={() => copyToClipboard(latestExecutiveSummary, "Executive Summary kopiert")}>
