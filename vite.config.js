@@ -102,31 +102,50 @@ function joinUrl(baseUrl, path) {
   return `${String(baseUrl || "").replace(/\/+$/, "")}/${String(path || "").replace(/^\/+/, "")}`;
 }
 
-function createManusApiV2TaskBody(payload) {
+function createManusApiV2MessageContent(payload) {
   const manusTask = payload.manusTask || {};
-  const briefing = payload.briefing || "";
   const title = manusTask.title || manusTask.id || "Jarvis Manus Research Task";
   const objective = manusTask.objective || manusTask.goal || manusTask.summary || title;
-  const instructions = [
-    "You are COO Manus for Jarvis-Pro.",
-    "Execute research, analysis, planning, and Codex draft preparation only.",
-    "Do not perform login, purchase, upload, deploy, merge, or other external side effects.",
-    briefing ? `Jarvis briefing:\n${briefing}` : "",
-    `ManusTask JSON:\n${JSON.stringify(manusTask, null, 2)}`,
-  ].filter(Boolean).join("\n\n");
+  const sourceUserRequest = manusTask.sourceUserRequest || payload.sourceUserRequest || payload.sourceMessage || "Nicht angegeben";
 
+  return `Titel:
+${title}
+
+Ziel:
+${objective}
+
+Ursprungsauftrag:
+${sourceUserRequest}
+
+Aufgabe für COO Manus:
+Bitte prüfe die Geschäftsidee operativ. Erstelle einen Bericht mit:
+- Zusammenfassung
+- Markt-/Zielgruppenprüfung
+- Chancen
+- Risiken
+- erste Handlungsempfehlung
+- mögliche Codex-Folgeaufgabe
+
+Erlaubt:
+- öffentliche Recherche
+- Analyse
+- Bericht erstellen
+
+Blockiert:
+- Login
+- Käufe
+- Zahlungen
+- Uploads
+- Formulare absenden
+- Commit/PR
+- Merge
+- Deploy`;
+}
+
+function createManusApiV2TaskBody(payload) {
   return {
-    prompt: `${objective}\n\n${instructions}`,
-    instructions,
-    task: {
-      title,
-      objective,
-      type: manusTask.type || "jarvis_research_task",
-      priority: manusTask.priority || "medium",
-      safetyMode: "research_analysis_codex_draft_only",
-      forbiddenActions: MANUS_FORBIDDEN_ACTIONS,
-      jarvisTaskId: manusTask.id || "",
-      payload,
+    message: {
+      content: createManusApiV2MessageContent(payload),
     },
   };
 }
@@ -233,7 +252,7 @@ async function forwardManusTask(env, payload) {
       body: {
         status: "failed",
         error: "manus_connector_failed",
-        errorMessage: `HTTP ${response.status}: ${extractManusErrorText(data, text)}`,
+        errorMessage: extractManusErrorText(data, text),
         httpStatus: response.status,
         connectorType: connector.connectorType,
       },
@@ -246,11 +265,12 @@ async function forwardManusTask(env, payload) {
   return {
     statusCode: 200,
     body: {
-      status: taskId ? "task_sent" : "report_ready",
+      status: isManusApi ? "task_sent" : (taskId ? "task_sent" : "report_ready"),
       connectorType: connector.connectorType,
       httpStatus: response.status,
       manusTaskId: taskId,
       task_id: taskId,
+      manus_task_id: taskId,
       taskUrl: data.taskUrl || data.url || data.link || "",
       report: normalizeManusReport(data, messagesResult),
       messages: messagesResult?.messages || [],
