@@ -25,9 +25,7 @@ const ROLES = {
 
 
 
-const MANUS_CONNECTOR_STATUS = import.meta.env.VITE_MANUS_SERVER_CONNECTOR === "true"
-  ? "manus_live_connected"
-  : "needs_manus_connector";
+const MANUS_CONNECTOR_STATUS = "needs_manus_connector";
 
 const MANUS_TASK_STATUS = "task_prepared";
 
@@ -371,17 +369,15 @@ function generateStatusReply({ ceoStatus, manusCapability }) {
   return `Status kurz:\n- CEO ChatGPT: ${CEO_CONNECTION_STATUS_LABELS[ceoStatus] || ceoStatus}\n- COO Manus Connector: ${manusCapability.status}\n- Manus Live senden: ${manusCapability.canSendLive ? "bereit nach GO" : "deaktiviert, sicherer serverseitiger Connector fehlt"}\n- n8n Fallback: aktiv; Vertrag bleibt { chatInput: userMessage } → data.output\n- Delegation: keine gestartet.`;
 }
 
-function detectManusCapability() {
-  const serverConnector = import.meta.env.VITE_MANUS_SERVER_CONNECTOR === "true";
-  const connectorType = import.meta.env.VITE_MANUS_CONNECTOR_TYPE || "none";
-  const status = serverConnector ? "manus_live_connected" : "needs_manus_connector";
+function detectManusCapability(serverStatus = {}) {
+  const status = serverStatus.status || MANUS_CONNECTOR_STATUS;
   return {
     status,
-    connectorType: serverConnector ? connectorType : "none",
+    connectorType: status === "manus_live_connected" ? serverStatus.connectorType || "server" : "none",
     serverSideOnly: true,
     tokenInFrontend: false,
-    canSendLive: serverConnector,
-    missing: serverConnector ? "" : "Keine sichere Manus API/MCP/Webhook/Browser-Operator-Bridge serverseitig konfiguriert.",
+    canSendLive: status === "manus_live_connected",
+    missing: status === "manus_live_connected" ? "" : "Keine sichere Manus API/MCP/Webhook/Browser-Operator-Bridge serverseitig konfiguriert.",
   };
 }
 
@@ -847,6 +843,8 @@ function App() {
   const [commands, setCommands] = useState(() => JSON.parse(localStorage.getItem("jarvis.commandTasks") || "[]"));
   const [manualGitHubStatus, setManualGitHubStatus] = useState(() => JSON.parse(localStorage.getItem("jarvis.githubReturnChannel") || "null") || createGitHubReturnChannelStatus());
   const [conversationMode, setConversationMode] = useState("Gespräch");
+  const [manusServerStatus, setManusServerStatus] = useState({ status: MANUS_CONNECTOR_STATUS });
+  const [manusLiveStatus, setManusLiveStatus] = useState(MANUS_CONNECTOR_STATUS);
   const chatEndRef = useRef(null);
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
@@ -866,7 +864,7 @@ function App() {
   const latestExecutiveSummary = latestDecision ? generateExecutiveSummary(latestDecision, commands.filter((task) => task.executiveDecisionId === latestDecision.id)) : "";
   const activeBoardChain = latestDecision?.boardFlow || createBoardExecutionChain([], false);
   const githubCapability = detectGitHubCapability();
-  const manusCapability = detectManusCapability();
+  const manusCapability = detectManusCapability(manusServerStatus);
   const latestCodexHandoff = latestCodexTask && latestCodexDecision ? createCodexHandoff(latestCodexTask, latestCodexDecision, { manusBriefing: latestManusBriefing, codexPrompt: latestCodexPrompt }) : null;
   const latestCodexHandoffText = formatCodexHandoff(latestCodexHandoff);
   const latestGitHubIssueDraft = latestCodexTask && latestCodexDecision ? createGitHubIssueDraft(latestCodexTask, latestCodexDecision, latestCodexHandoff, latestManusBriefing) : null;
@@ -875,6 +873,7 @@ function App() {
   const nextGitHubApproval = latestGitHubReturnStatus.humanApprovalRequired
     ? "Menschliche Prüfung/Freigabe erforderlich: Status prüfen, Blocker klären, PR reviewen. Kein Merge/Deploy in Jarvis."
     : "Keine nächste Freigabe markiert; Merge/Deploy bleiben trotzdem außerhalb von Jarvis.";
+  const manuscriptCodexTaskDraft = latestManusTask?.manusReport?.codexTaskDraft || "";
   const latestReturnPathReport = createReturnPathReport(latestCodexTask || latestManusTask, latestDecision);
   const voiceStatusLabel = VOICE_STATUS_LABELS[voiceStatus] || voiceStatus;
 
@@ -923,6 +922,8 @@ function App() {
   const WEBHOOK_URL =
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
   const DIRECT_CHATGPT_URL = "/api/chatgpt";
+  const MANUS_STATUS_URL = "/api/manus/status";
+  const MANUS_TASK_URL = "/api/manus/task";
 
   async function requestChatGptAnswer(userMessage, mode = "conversation", signal) {
     try {
@@ -1141,6 +1142,62 @@ function App() {
     localStorage.setItem("jarvis.githubReturnChannel", JSON.stringify(manualGitHubStatus));
   }, [manualGitHubStatus]);
 
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadManusStatus() {
+      try {
+        const response = await fetch(MANUS_STATUS_URL, { method: "GET" });
+        if (!response.ok) throw new Error(`Manus status unavailable: ${response.status}`);
+        const status = await response.json();
+        if (!cancelled) {
+          setManusServerStatus(status);
+          setManusLiveStatus(status.status || MANUS_CONNECTOR_STATUS);
+        }
+      } catch {
+        if (!cancelled) {
+          setManusServerStatus({ status: MANUS_CONNECTOR_STATUS });
+          setManusLiveStatus(MANUS_CONNECTOR_STATUS);
+        }
+      }
+    }
+
+    loadManusStatus();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function sendManusLiveTask() {
+    if (!latestManusTask?.manusTask || !manusCapability.canSendLive) return;
+    setManusLiveStatus("task_sent");
+
+    try {
+      const response = await fetch(MANUS_TASK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manusTask: latestManusTask.manusTask, briefing: latestManusBriefing }),
+      });
+      const data = await response.json();
+
+      if (data.status === "needs_manus_connector") {
+        setManusLiveStatus("needs_manus_connector");
+        return;
+      }
+
+      if (!response.ok || data.status === "failed") {
+        setManusLiveStatus(data.status || "failed");
+        return;
+      }
+
+      const report = data.report || createManusReportModel();
+      setCommands((old) => old.map((task) => task.id === latestManusTask.id
+        ? { ...task, status: report.status || "report_ready", manusReport: report }
+        : task));
+      setManusLiveStatus(report.status || "report_ready");
+    } catch (error) {
+      console.error(error);
+      setManusLiveStatus("failed");
+    }
+  }
 
 
   function stopCurrentActivity() {
@@ -1525,7 +1582,8 @@ function App() {
         <div className="statusModule manusPanel">
           <p>COO Manus</p>
           <strong>ChatGPT → Manus Bridge: {latestManusTask ? "task_prepared" : "bereit"}</strong>
-          <small>Manus Connector Status: {manusCapability.status} · Live senden: {manusCapability.canSendLive ? "nach GO möglich" : "disabled"} · Research-GO benötigt: {latestManusTask ? "ja" : "nein"}</small>
+          <small>Manus Connector Status: {manusCapability.status} · Live Status: {manusLiveStatus} · Typ: {manusCapability.connectorType}</small>
+          <small>Live senden: {manusCapability.canSendLive ? "nach GO möglich" : "disabled"} · Research-GO benötigt: {latestManusTask ? "ja" : "nein"}</small>
           {latestManusTask ? (
             <div className="manusDetails">
               <span>Letzter Task: {latestManusTask.title}</span>
@@ -1550,12 +1608,22 @@ function App() {
               <button className="miniAction" onClick={() => copyToClipboard(generateCodexPrompt(latestManusTask, latestManusDecision, { tasks: commands }), "Codex-Folgeauftrag aus Manus kopiert")}>
                 Codex-Folgeauftrag erzeugen/kopieren
               </button>
-              <button className="miniAction" disabled={!manusCapability.canSendLive} title={manusCapability.missing || "Nur nach Research-GO"}>
+              <button className="miniAction" onClick={sendManusLiveTask} disabled={!manusCapability.canSendLive || manusLiveStatus === "task_sent"} title={manusCapability.missing || "Nur nach Research-GO; keine Login-/Kauf-/Upload-/Codex-Aktion"}>
                 Manus live senden{manusCapability.canSendLive ? " (nach GO)" : " disabled"}
               </button>
               <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify(latestManusTask.manusTask, null, 2), "ManusTask Handoff kopiert")}>
                 Copy/Handoff ManusTask
               </button>
+              <details className="briefingBox" open={latestManusTask.manusReport?.status === "report_ready"}>
+                <summary>ManusReport anzeigen</summary>
+                <pre className="promptBox">{JSON.stringify(latestManusTask.manusReport, null, 2)}</pre>
+              </details>
+              {latestManusTask.manusReport?.codexTaskDraft && (
+                <details className="briefingBox" open>
+                  <summary>CodexTaskDraft aus ManusReport</summary>
+                  <pre className="promptBox">{latestManusTask.manusReport.codexTaskDraft}</pre>
+                </details>
+              )}
               <small>{localApprovals[latestManusTask.id] ? "Status lokal geändert – keine externe Ausführung gestartet." : "Status: wartet auf Freigabe"}</small>
             </div>
           ) : (
@@ -1567,6 +1635,15 @@ function App() {
           <p>CTO Codex</p>
           <strong>PROMPT WORKFLOW VORBEREITET</strong>
           <small>Direkte externe Ausführung: nicht verbunden · kein Commit/PR ohne menschliches GO.</small>
+          {manuscriptCodexTaskDraft && (
+            <div className="manusDetails">
+              <span>CodexTaskDraft aus ManusReport bereit.</span>
+              <pre className="promptBox">{manuscriptCodexTaskDraft}</pre>
+              <button className="miniAction" onClick={() => copyToClipboard(manuscriptCodexTaskDraft, "Codex-Handoff vorbereitet")}>
+                Codex-Handoff vorbereiten
+              </button>
+            </div>
+          )}
           {latestCodexTask ? (
             <div className="manusDetails">
               <span>Letzter Task: {latestCodexTask.title}</span>
