@@ -28,6 +28,7 @@ const ROLES = {
 const MANUS_CONNECTOR_STATUS = "needs_manus_connector";
 
 const MANUS_TASK_STATUS = "task_prepared";
+const MANUS_LIVE_STATUS = { READY: "ready", SENDING: "sending_to_manus", SENT: "task_sent", REPORT: "report_ready", FAILED: "failed" };
 
 const MANUS_TASK_TYPES = {
   research: "research",
@@ -327,6 +328,11 @@ function createVisibleSummary(text) {
   return summary.length > 260 ? `${summary.slice(0, 257)}...` : summary;
 }
 
+function isResearchGoLiveIntent(text) {
+  const normalized = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+  return /\bgo research\b/.test(normalized) || normalized.includes("research-go") || normalized.includes("manus live senden") || normalized.includes("sende manustask live an manus");
+}
+
 function getConversationIntent(text) {
   const normalized = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
   const statusTerms = ["status", "verbunden", "verbindung", "direktverbindung", "connected", "connector", "manus verbunden", "chatgpt verbunden", "aktueller status"];
@@ -334,7 +340,7 @@ function getConversationIntent(text) {
     "erstelle eine ceo-einschätzung", "erstelle eine ceo einschätzung", "ceo-einschätzung erstellen", "ceo einschätzung erstellen",
     "erstelle eine executive summary", "executive summary erstellen",
     "bereite manus vor", "bereite coo manus vor", "erstelle einen manustask", "erstelle einen manus task", "gib das an manus weiter",
-    "starte research", "go research", "go manus", "research-go", "research go",
+    "starte research", "go research", "go manus", "research-go", "research go", "manus live senden", "sende manustask live an manus",
     "mach daraus einen operativen auftrag", "prüfe operativ mit manus", "prüfe diese idee operativ mit manus", "prüf diese idee operativ mit manus",
     "erstelle codex-auftrag", "bereite umsetzung vor", "research-go", "manus-task", "manus task",
   ];
@@ -844,7 +850,8 @@ function App() {
   const [manualGitHubStatus, setManualGitHubStatus] = useState(() => JSON.parse(localStorage.getItem("jarvis.githubReturnChannel") || "null") || createGitHubReturnChannelStatus());
   const [conversationMode, setConversationMode] = useState("Gespräch");
   const [manusServerStatus, setManusServerStatus] = useState({ status: MANUS_CONNECTOR_STATUS });
-  const [manusLiveStatus, setManusLiveStatus] = useState(MANUS_CONNECTOR_STATUS);
+  const [manusLiveStatus, setManusLiveStatus] = useState(MANUS_LIVE_STATUS.READY);
+  const [manusLiveResult, setManusLiveResult] = useState({ manusTaskId: "", taskUrl: "", errorMessage: "", lastReport: null, lastSentAt: "" });
   const chatEndRef = useRef(null);
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
@@ -1152,7 +1159,7 @@ function App() {
         const status = await response.json();
         if (!cancelled) {
           setManusServerStatus(status);
-          setManusLiveStatus(status.status || MANUS_CONNECTOR_STATUS);
+          setManusLiveStatus(status.status === "manus_live_connected" ? MANUS_LIVE_STATUS.READY : status.status || MANUS_CONNECTOR_STATUS);
         }
       } catch {
         if (!cancelled) {
@@ -1167,8 +1174,15 @@ function App() {
   }, []);
 
   async function sendManusLiveTask() {
-    if (!latestManusTask?.manusTask || !manusCapability.canSendLive) return;
-    setManusLiveStatus("task_sent");
+    if (!latestManusTask?.manusTask) {
+      setManusLiveStatus(MANUS_LIVE_STATUS.FAILED);
+      setManusLiveResult((old) => ({ ...old, errorMessage: "Kein ManusTask vorbereitet." }));
+      return;
+    }
+
+    markTask(latestManusTask.id, "approved_for_research");
+    setManusLiveStatus(MANUS_LIVE_STATUS.SENDING);
+    setManusLiveResult((old) => ({ ...old, errorMessage: "", lastSentAt: new Date().toISOString() }));
 
     try {
       const response = await fetch(MANUS_TASK_URL, {
@@ -1178,24 +1192,30 @@ function App() {
       });
       const data = await response.json();
 
-      if (data.status === "needs_manus_connector") {
-        setManusLiveStatus("needs_manus_connector");
-        return;
-      }
-
-      if (!response.ok || data.status === "failed") {
-        setManusLiveStatus(data.status || "failed");
+      if (!response.ok || data.status === "failed" || data.status === "needs_manus_connector") {
+        const errorMessage = data.errorMessage || data.message || data.error || `Manus API Fehler: ${response.status}`;
+        setManusLiveStatus(data.status === "needs_manus_connector" ? "needs_manus_connector" : MANUS_LIVE_STATUS.FAILED);
+        setManusLiveResult((old) => ({ ...old, errorMessage }));
+        setChat((old) => [...old, { role: "jarvis", text: `Manus Live Flow: failed\nerror_message: ${errorMessage}`, summary: `Manus Live Flow failed: ${errorMessage}` }]);
         return;
       }
 
       const report = data.report || createManusReportModel();
+      const finalStatus = data.status === MANUS_LIVE_STATUS.SENT && !report.summary ? MANUS_LIVE_STATUS.SENT : (report.status || data.status || MANUS_LIVE_STATUS.REPORT);
       setCommands((old) => old.map((task) => task.id === latestManusTask.id
-        ? { ...task, status: report.status || "report_ready", manusReport: report }
+        ? { ...task, status: finalStatus, manusReport: report, manusTask: { ...task.manusTask, liveStatus: finalStatus, manusTaskId: data.manusTaskId || "", taskUrl: data.taskUrl || "" } }
         : task));
-      setManusLiveStatus(report.status || "report_ready");
+      setManusLiveStatus(finalStatus);
+      setManusLiveResult({ manusTaskId: data.manusTaskId || "", taskUrl: data.taskUrl || "", errorMessage: "", lastReport: report, lastSentAt: new Date().toISOString() });
+      const locationHint = data.taskUrl || data.manusTaskId
+        ? `Manus Task ID: ${data.manusTaskId || "nicht geliefert"}\nLink/Hinweis: ${data.taskUrl || "Kein Link von API geliefert."}`
+        : "Keine Manus Task ID/kein Link von API geliefert. Bitte in Manus unter Neue Aufgabe / Agent / Verlauf prüfen.";
+      setChat((old) => [...old, { role: "jarvis", text: `Manus Live Flow: ${finalStatus}\n${locationHint}`, summary: `Manus Live Flow: ${finalStatus}` }]);
     } catch (error) {
-      console.error(error);
-      setManusLiveStatus("failed");
+      const errorMessage = error instanceof Error ? error.message : "Unbekannter Manus Live Fehler";
+      setManusLiveStatus(MANUS_LIVE_STATUS.FAILED);
+      setManusLiveResult((old) => ({ ...old, errorMessage }));
+      setChat((old) => [...old, { role: "jarvis", text: `Manus Live Flow: failed\nerror_message: ${errorMessage}`, summary: `Manus Live Flow failed: ${errorMessage}` }]);
     }
   }
 
@@ -1260,6 +1280,14 @@ function App() {
       const statusAnswer = generateStatusReply({ ceoStatus: ceoConnectionStatus, manusCapability });
       setChat((old) => [...old, { role: "jarvis", text: statusAnswer, summary: statusAnswer }]);
       speak(statusAnswer);
+      return;
+    }
+
+    if (isResearchGoLiveIntent(userMessage) && latestManusTask?.manusTask) {
+      setConversationMode("Ausführung");
+      const goAnswer = "Research-GO erteilt. Ich sende den vorbereiteten ManusTask jetzt live an Manus; Login, Uploads, Käufe, Commit/PR, Merge und Deploy bleiben blockiert.";
+      setChat((old) => [...old, { role: "jarvis", text: goAnswer, summary: goAnswer }]);
+      await sendManusLiveTask();
       return;
     }
 
@@ -1358,6 +1386,10 @@ function App() {
           <div className="agentCard prepared">
             <span>GitHub</span>
             <small>{githubCapability.status}</small>
+          </div>
+          <div className="agentCard active bridge">
+            <span>Voice</span>
+            <small>{voiceStatusLabel}</small>
           </div>
         </div>
 
@@ -1583,13 +1615,18 @@ function App() {
           <p>COO Manus</p>
           <strong>ChatGPT → Manus Bridge: {latestManusTask ? "task_prepared" : "bereit"}</strong>
           <small>Manus Connector Status: {manusCapability.status} · Live Status: {manusLiveStatus} · Typ: {manusCapability.connectorType}</small>
-          <small>Live senden: {manusCapability.canSendLive ? "nach GO möglich" : "disabled"} · Research-GO benötigt: {latestManusTask ? "ja" : "nein"}</small>
+          <small>Live senden: {manusCapability.canSendLive ? "nach GO möglich" : "disabled"} · Research-GO: {latestManusTask ? (localApprovals[latestManusTask.id] === "approved_for_research" || ["sending_to_manus", "task_sent", "report_ready"].includes(manusLiveStatus) ? "erteilt" : "nicht erteilt") : "nicht erteilt"}</small>
           {latestManusTask ? (
             <div className="manusDetails">
               <span>Letzter Task: {latestManusTask.title}</span>
               <span>Status: {latestManusTask.manusTask?.status || formatStatus(latestManusTask.status)} · Connector: {manusCapability.status}</span>
               <span>ManusTask vorhanden: {latestManusTask.manusTask?.id || "nein"}</span>
-              <span>Research-GO benötigt: ja · Login-GO separat: ja · Action-GO separat: ja</span>
+              <span>Research-GO: {localApprovals[latestManusTask.id] === "approved_for_research" || ["sending_to_manus", "task_sent", "report_ready"].includes(manusLiveStatus) ? "erteilt" : "nicht erteilt"}</span>
+              <span>Live Send: {manusLiveStatus}</span>
+              <span>Manus Task ID: {manusLiveResult.manusTaskId || latestManusTask.manusTask?.manusTaskId || "nicht geliefert"}</span>
+              <span>Letzter Fehler: {manusLiveResult.errorMessage || "kein Fehler"}</span>
+              <span>Manus Ort: {manusLiveResult.taskUrl ? manusLiveResult.taskUrl : "Kein Link von API. Bitte in Manus unter Neue Aufgabe / Agent / Verlauf prüfen."}</span>
+              <span>Login-GO separat: ja · Action-GO separat: ja</span>
               <span>Web Research Task: {latestManusTask.webResearchTask?.id || "nicht erforderlich"}</span>
               <span>Browser/Login: nur mit expliziter Freigabe · Live-Ausführung: {manusCapability.canSendLive ? "serverseitig vorbereitet" : "nicht verbunden"}</span>
               <details className="briefingBox">
@@ -1600,7 +1637,7 @@ function App() {
                 Manus-Auftrag kopieren
               </button>
               <button className="miniAction" onClick={() => markTask(latestManusTask.id, "approved_for_research")}>
-                Research-Freigabe lokal markieren
+                Research-GO erteilen
               </button>
               <button className="miniAction" onClick={() => markTask(latestManusTask.id, "approved_for_login")}>
                 Login-Freigabe lokal markieren
@@ -1608,7 +1645,7 @@ function App() {
               <button className="miniAction" onClick={() => copyToClipboard(generateCodexPrompt(latestManusTask, latestManusDecision, { tasks: commands }), "Codex-Folgeauftrag aus Manus kopiert")}>
                 Codex-Folgeauftrag erzeugen/kopieren
               </button>
-              <button className="miniAction" onClick={sendManusLiveTask} disabled={!manusCapability.canSendLive || manusLiveStatus === "task_sent"} title={manusCapability.missing || "Nur nach Research-GO; keine Login-/Kauf-/Upload-/Codex-Aktion"}>
+              <button className="miniAction" onClick={sendManusLiveTask} disabled={!manusCapability.canSendLive || manusLiveStatus === "sending_to_manus"} title={manusCapability.missing || "Nur nach Research-GO; keine Login-/Kauf-/Upload-/Codex-Aktion"}>
                 Manus live senden{manusCapability.canSendLive ? " (nach GO)" : " disabled"}
               </button>
               <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify(latestManusTask.manusTask, null, 2), "ManusTask Handoff kopiert")}>
@@ -1616,7 +1653,16 @@ function App() {
               </button>
               <details className="briefingBox" open={latestManusTask.manusReport?.status === "report_ready"}>
                 <summary>ManusReport anzeigen</summary>
-                <pre className="promptBox">{JSON.stringify(latestManusTask.manusReport, null, 2)}</pre>
+                <div className="reportGrid">
+                  <span><b>summary</b>{latestManusTask.manusReport?.summary || "offen"}</span>
+                  <span><b>findings</b>{(latestManusTask.manusReport?.findings || []).join(" · ") || "offen"}</span>
+                  <span><b>risks</b>{(latestManusTask.manusReport?.risks || []).join(" · ") || "offen"}</span>
+                  <span><b>recommendation</b>{latestManusTask.manusReport?.recommendation || "offen"}</span>
+                  <span><b>sourcesChecked</b>{(latestManusTask.manusReport?.sourcesChecked || []).join(" · ") || "offen"}</span>
+                  <span><b>blockers</b>{(latestManusTask.manusReport?.blockers || []).join(" · ") || "offen"}</span>
+                  <span><b>codexTaskDraft</b>{latestManusTask.manusReport?.codexTaskDraft || "offen"}</span>
+                  <span><b>approvalNeeded</b>{String(latestManusTask.manusReport?.approvalNeeded ?? true)}</span>
+                </div>
               </details>
               {latestManusTask.manusReport?.codexTaskDraft && (
                 <details className="briefingBox" open>

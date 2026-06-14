@@ -6,7 +6,7 @@ Jarvis verbindet COO Manus nur dann live, wenn eine sichere serverseitige Schnit
 ## Serverseitige Detection
 Die Vite-Dev-Backend-Route prüft ausschließlich serverseitige Environment-Variablen:
 
-- `MANUS_API_KEY` optional als Bearer Token für serverseitige Manus-Requests
+- `MANUS_API_KEY` optional als `x-manus-api-key` Header für serverseitige Manus-Requests
 - `MANUS_API_URL`
 - `MANUS_WEBHOOK_URL`
 - `MANUS_MCP_URL`

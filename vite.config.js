@@ -137,7 +137,7 @@ async function forwardManusTask(env, payload) {
 
   const endpoint = env[connector.configuredEnv];
   const headers = { "Content-Type": "application/json" };
-  if (env.MANUS_API_KEY) headers.Authorization = `Bearer ${env.MANUS_API_KEY}`;
+  if (env.MANUS_API_KEY) headers["x-manus-api-key"] = env.MANUS_API_KEY;
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -156,14 +156,16 @@ async function forwardManusTask(env, payload) {
   })() : {};
 
   if (!response.ok) {
-    return { statusCode: response.status, body: { status: "failed", error: "manus_connector_failed", connectorType: connector.connectorType } };
+    return { statusCode: response.status, body: { status: "failed", error: "manus_connector_failed", errorMessage: "Manus connector request failed", connectorType: connector.connectorType } };
   }
 
   return {
     statusCode: 200,
     body: {
-      status: "report_ready",
+      status: data.taskId || data.manusTaskId || data.id ? "task_sent" : "report_ready",
       connectorType: connector.connectorType,
+      manusTaskId: data.manusTaskId || data.taskId || data.id || "",
+      taskUrl: data.taskUrl || data.url || data.link || "",
       report: normalizeManusReport(data),
     },
   };
