@@ -98,19 +98,88 @@ function createNeedsManusConnectorResponse(env) {
     allowedManualActions: ["ManusTask kopieren", "Report manuell einfügen", "CodexTaskDraft manuell vorbereiten"],
   };
 }
+function joinUrl(baseUrl, path) {
+  return `${String(baseUrl || "").replace(/\/+$/, "")}/${String(path || "").replace(/^\/+/, "")}`;
+}
 
-function normalizeManusReport(data) {
-  const source = data?.manusReport || data?.report || data || {};
+function createManusApiV2TaskBody(payload) {
+  const manusTask = payload.manusTask || {};
+  const briefing = payload.briefing || "";
+  const title = manusTask.title || manusTask.id || "Jarvis Manus Research Task";
+  const objective = manusTask.objective || manusTask.goal || manusTask.summary || title;
+  const instructions = [
+    "You are COO Manus for Jarvis-Pro.",
+    "Execute research, analysis, planning, and Codex draft preparation only.",
+    "Do not perform login, purchase, upload, deploy, merge, or other external side effects.",
+    briefing ? `Jarvis briefing:\n${briefing}` : "",
+    `ManusTask JSON:\n${JSON.stringify(manusTask, null, 2)}`,
+  ].filter(Boolean).join("\n\n");
+
   return {
-    status: source.status || "report_ready",
-    summary: source.summary || source.output || source.message || "Manus hat geantwortet.",
-    findings: Array.isArray(source.findings) ? source.findings : [],
+    prompt: `${objective}\n\n${instructions}`,
+    instructions,
+    task: {
+      title,
+      objective,
+      type: manusTask.type || "jarvis_research_task",
+      priority: manusTask.priority || "medium",
+      safetyMode: "research_analysis_codex_draft_only",
+      forbiddenActions: MANUS_FORBIDDEN_ACTIONS,
+      jarvisTaskId: manusTask.id || "",
+      payload,
+    },
+  };
+}
+
+function extractManusTaskId(data) {
+  return data?.task_id || data?.taskId || data?.manus_task_id || data?.manusTaskId || data?.id || data?.task?.id || data?.task?.task_id || "";
+}
+
+function extractManusErrorText(data, fallbackText = "") {
+  if (!data || typeof data !== "object") return String(fallbackText || "Manus connector request failed");
+  const error = data.error || data.errorMessage || data.message || data.detail || data.details || data.title;
+  if (typeof error === "string") return error;
+  if (error) return JSON.stringify(error);
+  return String(fallbackText || "Manus connector request failed");
+}
+
+async function readManusResponse(response) {
+  const text = await response.text();
+  if (!text) return { data: {}, text: "" };
+  try {
+    return { data: JSON.parse(text), text };
+  } catch {
+    return { data: { summary: text }, text };
+  }
+}
+
+async function fetchManusMessages(endpoint, headers, taskId) {
+  if (!taskId) return null;
+  const url = `${joinUrl(endpoint, "task.listMessages")}?task_id=${encodeURIComponent(taskId)}`;
+  const response = await fetch(url, { method: "GET", headers });
+  const { data, text } = await readManusResponse(response);
+  if (!response.ok) {
+    return { status: "failed", httpStatus: response.status, errorMessage: extractManusErrorText(data, text), raw: data };
+  }
+  return { status: "report_ready", httpStatus: response.status, raw: data, messages: data.messages || data.data || data.items || [] };
+}
+
+function normalizeManusReport(data, messagesResult = null) {
+  const source = data?.manusReport || data?.report || data || {};
+  const messages = Array.isArray(messagesResult?.messages) ? messagesResult.messages : [];
+  const firstMessage = messages.find((message) => message?.content || message?.text || message?.message) || {};
+  return {
+    status: messagesResult?.status || source.status || "report_ready",
+    summary: source.summary || source.output || source.message || firstMessage.content || firstMessage.text || firstMessage.message || "Manus task.create wurde angenommen.",
+    findings: Array.isArray(source.findings) ? source.findings : messages.slice(0, 5).map((message) => message.content || message.text || message.message).filter(Boolean),
     risks: Array.isArray(source.risks) ? source.risks : [],
     recommendation: source.recommendation || "ManusReport prüfen und nächstes menschliches GO entscheiden.",
     sourcesChecked: Array.isArray(source.sourcesChecked) ? source.sourcesChecked : [],
     blockers: Array.isArray(source.blockers) ? source.blockers : [],
     codexTaskDraft: source.codexTaskDraft || "",
     approvalNeeded: source.approvalNeeded ?? true,
+    messagesStatus: messagesResult?.status || "not_requested",
+    messagesHttpStatus: messagesResult?.httpStatus || null,
   };
 }
 
@@ -136,40 +205,61 @@ async function forwardManusTask(env, payload) {
   }
 
   const endpoint = env[connector.configuredEnv];
+  const isManusApi = connector.connectorType === "api";
+  const targetUrl = isManusApi ? joinUrl(endpoint, "task.create") : endpoint;
   const headers = { "Content-Type": "application/json" };
-  if (env.MANUS_API_KEY) headers["x-manus-api-key"] = env.MANUS_API_KEY;
+  if (isManusApi && env.MANUS_API_KEY) headers["x-manus-api-key"] = env.MANUS_API_KEY;
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
+  const body = isManusApi
+    ? createManusApiV2TaskBody(payload)
+    : {
       type: "jarvis_manus_task",
       safetyMode: "research_analysis_codex_draft_only",
       forbiddenActions: MANUS_FORBIDDEN_ACTIONS,
       payload,
-    }),
+    };
+
+  const response = await fetch(targetUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
   });
 
-  const text = await response.text();
-  const data = text ? (() => {
-    try { return JSON.parse(text); } catch { return { summary: text }; }
-  })() : {};
+  const { data, text } = await readManusResponse(response);
 
   if (!response.ok) {
-    return { statusCode: response.status, body: { status: "failed", error: "manus_connector_failed", errorMessage: "Manus connector request failed", connectorType: connector.connectorType } };
+    return {
+      statusCode: response.status,
+      body: {
+        status: "failed",
+        error: "manus_connector_failed",
+        errorMessage: `HTTP ${response.status}: ${extractManusErrorText(data, text)}`,
+        httpStatus: response.status,
+        connectorType: connector.connectorType,
+      },
+    };
   }
+
+  const taskId = extractManusTaskId(data);
+  const messagesResult = isManusApi && taskId ? await fetchManusMessages(endpoint, headers, taskId) : null;
 
   return {
     statusCode: 200,
     body: {
-      status: data.taskId || data.manusTaskId || data.id ? "task_sent" : "report_ready",
+      status: taskId ? "task_sent" : "report_ready",
       connectorType: connector.connectorType,
-      manusTaskId: data.manusTaskId || data.taskId || data.id || "",
+      httpStatus: response.status,
+      manusTaskId: taskId,
+      task_id: taskId,
       taskUrl: data.taskUrl || data.url || data.link || "",
-      report: normalizeManusReport(data),
+      report: normalizeManusReport(data, messagesResult),
+      messages: messagesResult?.messages || [],
+      messagesStatus: messagesResult?.status || "not_requested",
+      messagesErrorMessage: messagesResult?.status === "failed" ? messagesResult.errorMessage : "",
     },
   };
 }
+
 
 function jarvisManusDevProxy(env) {
   return {
