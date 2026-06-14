@@ -203,3 +203,14 @@ Verbindungen werden ehrlich getrennt: CEO/n8n/Local Task Store sind aktiv bezieh
 Phase 2.9 ergänzt Jarvis Pro um einen kontrollierten GitHub/Codex-Handoff: Aus einem Jarvis-Auftrag entstehen CEO-Kontext, Manus-Plan, Codex-Handoff und ein strukturierter GitHub-Issue-Entwurf. Die UI kann Handoff und Issue Draft anzeigen, kopieren und die GitHub-Fähigkeit prüfen.
 
 GitHub-Issue-Erstellung und PR-/Issue-Status per API bleiben deaktiviert, solange kein sicherer serverseitiger Connector, n8n Credential/Workflow oder MCP/GitHub Tool verbunden ist. Keine Secrets, Tokens, API-Keys oder Passwörter werden ins Frontend oder Repository geschrieben. Human Approval First bleibt bindend: keine externe Aktion, kein Commit/PR, kein Merge und kein Deploy ohne ausdrückliches menschliches GO.
+
+## Phase 3.0a – GitHub Rückkanal + Codex PR Status
+
+Jarvis zeigt im CTO Codex / GitHub Bereich jetzt ein lokales Rückkanalmodell für Issue, Branch, Commit, PR, Checks, Review, Blocker und nächste menschliche Freigabe. Ohne sicheren serverseitigen GitHub Connector wird keine Live-Verbindung behauptet: Status bleibt `needs_secret` oder `needs_connector`, Live-Buttons sind deaktiviert und der Grund wird angezeigt.
+
+Bis ein sicherer GitHub Connector, n8n GitHub Workflow, GitHub Webhook Receiver oder MCP/GitHub Tool vorhanden ist, kann Codex-/PR-Status manuell per Copy/Paste übernommen werden. GitHub Tokens gehören weiterhin nicht in den Browser. Merge und Deploy werden nicht aus Jarvis implementiert.
+
+Der n8n Chat-Vertrag bleibt unverändert:
+
+- Frontend sendet `{ "chatInput": userMessage }`
+- Frontend liest `data.output`

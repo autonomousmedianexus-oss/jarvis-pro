@@ -91,9 +91,9 @@ const CONNECTION_STATUS = {
     component: "GitHub",
     status: import.meta.env.VITE_GITHUB_CONNECTOR_STATUS || "needs_secret",
     allowedStatuses: ["connected", "needs_secret", "needs_connector", "prepared", "unavailable", "failed"],
-    possible: "Repo-Kontext, Codex-Handoff und GitHub-Issue-Draft lokal vorbereiten; echte API-Aktionen nur über sichere serverseitige Verbindung.",
-    missing: "GitHub Issue API nicht verbunden. Erforderlich: serverseitiger GitHub Connector, n8n Credential oder MCP/GitHub Tool.",
-    allowedAfterGo: "Issue-Draft kopieren oder lokale Freigabe markieren; echte Issue-Erstellung erst mit sicherem Backend-/n8n-/MCP-Connector.",
+    possible: "Repo-Kontext, Codex-Handoff, GitHub-Issue-Draft und manuelle PR-Statusübernahme lokal vorbereiten; echte API-Aktionen nur über sichere serverseitige Verbindung.",
+    missing: "GitHub Issue/PR/Checks API nicht verbunden. Erforderlich: serverseitiger GitHub Connector, n8n Credential oder MCP/GitHub Tool; kein Token im Browser.",
+    allowedAfterGo: "Issue-Draft kopieren, Codex-PR-Status manuell übernehmen oder lokale Freigabe markieren; echte Issue-/PR-Live-Lesung erst mit sicherem Backend-/n8n-/MCP-Connector.",
     blocked: "Keine Issue/PR API-Aktion aus dem Frontend; kein Token im Browser; kein Merge/Deploy.",
   },
   N8N_AUTOMATION: {
@@ -131,6 +131,8 @@ const TOOL_REGISTRY = [
   { name: "checkGitHubIssueCreation", mode: "local" },
   { name: "createGitHubIssueAfterHumanGo", mode: "server_required" },
   { name: "readGitHubIssueOrPrStatus", mode: "server_required" },
+  { name: "updateGitHubReturnChannelStatus", mode: "local" },
+  { name: "copyCodexPrStatusForJarvis", mode: "local" },
   { name: "markHumanApproval", mode: "local" },
   { name: "prepareN8nExecution", mode: "api_ready" },
   { name: "readTaskState", mode: "local" },
@@ -145,6 +147,43 @@ const TOOL_REGISTRY = [
   { name: "prepare_monetization_sprint", mode: "prepared" },
   { name: "export_research_task_state", mode: "local" },
 ];
+
+
+const GITHUB_RETURN_CHANNEL_DEFAULT = {
+  issueUrl: "",
+  issueNumber: "",
+  branchName: "",
+  commitSha: "",
+  prUrl: "",
+  prNumber: "",
+  prStatus: "not_connected",
+  checksStatus: "not_connected",
+  reviewStatus: "not_connected",
+  blockerNotes: "Live-GitHub-Rückkanal ist noch nicht verbunden. Status kann manuell aus Codex/GitHub übernommen werden.",
+  lastUpdatedAt: "",
+  humanApprovalRequired: true,
+};
+
+const GITHUB_RETURN_CHANNEL_FIELDS = [
+  { key: "issueUrl", label: "GitHub Issue URL", placeholder: "https://github.com/org/repo/issues/123" },
+  { key: "issueNumber", label: "Issue Nummer", placeholder: "123" },
+  { key: "branchName", label: "Branch Name", placeholder: "phase-3-0a-github-return-channel" },
+  { key: "commitSha", label: "Commit SHA", placeholder: "abc1234" },
+  { key: "prUrl", label: "PR URL", placeholder: "https://github.com/org/repo/pull/456" },
+  { key: "prNumber", label: "PR Nummer", placeholder: "456" },
+  { key: "prStatus", label: "PR Status", placeholder: "draft | open | ready_for_review | merged-disabled" },
+  { key: "checksStatus", label: "Checks", placeholder: "pending | passing | failing | not_connected" },
+  { key: "reviewStatus", label: "Review Status", placeholder: "required | approved | changes_requested" },
+  { key: "blockerNotes", label: "Blocker", placeholder: "Keine Blocker / fehlende Secrets / Review offen" },
+];
+
+function createGitHubReturnChannelStatus(overrides = {}) {
+  return {
+    ...GITHUB_RETURN_CHANNEL_DEFAULT,
+    lastUpdatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
 
 const GITHUB_HANDOFF_STATUS_VALUES = [
   "draft",
@@ -530,14 +569,17 @@ function detectGitHubCapability() {
     hasN8nOrchestrator: n8nOrchestrator,
     canCreateIssueFromJarvis: connected,
     canReadPrStatus: connected,
+    canUpdateManualStatus: true,
+    liveStatusConnected: connected,
     missing: connected ? "" : CONNECTION_STATUS.GITHUB.missing,
     issueCreationDisabledReason: connected ? "" : CONNECTION_STATUS.GITHUB.missing,
+    prStatusDisabledReason: connected ? "" : "Live-Status nicht verbunden: PR/Checks/Review bitte manuell aus Codex/GitHub übernehmen.",
   };
 }
 
 function createReturnPathReport(task, executiveDecision) {
   return {
-    codexResultReport: { summary: "Noch kein externes Codex-Ergebnis verbunden.", changedFiles: [], tests: [], risks: ["Externe Codex-Ausführung nicht verbunden"], openQuestions: ["Soll der vorbereitete Auftrag manuell an Codex übergeben werden?"], prInfo: "Kein PR-Status verbunden" },
+    codexResultReport: { summary: "Noch kein externer Live-Codex-Rückkanal verbunden.", changedFiles: [], tests: [], risks: ["Externe Codex-Ausführung nicht verbunden", "GitHub Live-Status nicht verbunden"], openQuestions: ["Soll der vorbereitete Auftrag manuell an Codex übergeben werden?"], prInfo: "Kein Live-PR-Status verbunden; manuelle Statusübernahme möglich" },
     manusOperationalReview: { matchesPlan: "offen", missingItems: ["Manus-Report fehlt"], blockers: ["Manus API/Webhook/MCP nicht konfiguriert"], recommendation: "Research zuerst manuell/extern nach GO durchführen." },
     ceoFinalAssessment: { riskLevel: executiveDecision?.riskLevel || "mittel", recommendation: "Erst Handoff prüfen, dann menschliches GO einholen.", approveRecommendation: false, requiresHumanDecision: true },
     jarvisHumanReport: { whatHappened: task ? `${task.roleLabel}-Handoff wurde lokal vorbereitet.` : "Noch kein Task vorbereitet.", risks: "Keine externe Ausführung erfolgt; Verbindungen fehlen teilweise.", recommendation: "Freigabe für Research oder Codex-Handoff bewusst setzen.", requiredDecision: "GO / Änderung / Ablehnung", possibleActions: ["Research-GO", "Login-GO", "Codex-Handoff-GO", "Ablehnen"] },
@@ -570,6 +612,7 @@ function createCommandTask(sourceMessage, route, commandNumber, taskOffset, norm
     externalStatus: "extern nicht verbunden",
     githubHandoffStatus: route.role === "CTO_CODEX" ? "draft" : undefined,
     githubIssue: null,
+    githubReturnChannel: route.role === "CTO_CODEX" ? createGitHubReturnChannelStatus() : undefined,
     webResearchTask: route.role === "COO_MANUS" && isManusWebResearchIntent(sourceMessage)
       ? createManusWebResearchTask(sourceMessage, sequence, executiveDecision)
       : null,
@@ -598,6 +641,7 @@ function createCommandsFromDecision(sourceMessage, commandNumber, executiveDecis
       externalStatus: "lokale Freigabe erforderlich",
       githubHandoffStatus: "draft",
       githubIssue: null,
+      githubReturnChannel: createGitHubReturnChannelStatus(),
     }] : [];
   }
 
@@ -684,6 +728,7 @@ function App() {
   const [time, setTime] = useState(new Date());
   const [executiveDecisions, setExecutiveDecisions] = useState(() => JSON.parse(localStorage.getItem("jarvis.executiveDecisions") || "[]"));
   const [commands, setCommands] = useState(() => JSON.parse(localStorage.getItem("jarvis.commandTasks") || "[]"));
+  const [manualGitHubStatus, setManualGitHubStatus] = useState(() => JSON.parse(localStorage.getItem("jarvis.githubReturnChannel") || "null") || createGitHubReturnChannelStatus());
   const chatEndRef = useRef(null);
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
@@ -704,6 +749,10 @@ function App() {
   const latestCodexHandoffText = formatCodexHandoff(latestCodexHandoff);
   const latestGitHubIssueDraft = latestCodexTask && latestCodexDecision ? createGitHubIssueDraft(latestCodexTask, latestCodexDecision, latestCodexHandoff, latestManusBriefing) : null;
   const latestGitHubIssueDraftText = formatGitHubIssueDraft(latestGitHubIssueDraft);
+  const latestGitHubReturnStatus = latestCodexTask?.githubReturnChannel || manualGitHubStatus;
+  const nextGitHubApproval = latestGitHubReturnStatus.humanApprovalRequired
+    ? "Menschliche Prüfung/Freigabe erforderlich: Status prüfen, Blocker klären, PR reviewen. Kein Merge/Deploy in Jarvis."
+    : "Keine nächste Freigabe markiert; Merge/Deploy bleiben trotzdem außerhalb von Jarvis.";
   const latestReturnPathReport = createReturnPathReport(latestCodexTask || latestManusTask, latestDecision);
   const voiceStatusLabel = VOICE_STATUS_LABELS[voiceStatus] || voiceStatus;
 
@@ -712,6 +761,32 @@ function App() {
     await navigator.clipboard?.writeText(text);
     setCopyNotice(notice);
     window.setTimeout(() => setCopyNotice(""), 2200);
+  };
+
+  const updateGitHubReturnStatus = (field, value) => {
+    const updated = createGitHubReturnChannelStatus({ ...latestGitHubReturnStatus, [field]: value });
+    setManualGitHubStatus(updated);
+    if (latestCodexTask) {
+      setCommands((old) => old.map((task) => task.id === latestCodexTask.id ? { ...task, githubReturnChannel: updated } : task));
+    }
+  };
+
+  const importGitHubReturnStatus = () => {
+    const pasted = window.prompt("Codex/GitHub Status als JSON einfügen");
+    if (!pasted) return;
+    try {
+      const parsed = JSON.parse(pasted);
+      const updated = createGitHubReturnChannelStatus(parsed);
+      setManualGitHubStatus(updated);
+      if (latestCodexTask) {
+        setCommands((old) => old.map((task) => task.id === latestCodexTask.id ? { ...task, githubReturnChannel: updated } : task));
+      }
+      setCopyNotice("GitHub Rückkanal manuell übernommen");
+      window.setTimeout(() => setCopyNotice(""), 2200);
+    } catch {
+      setCopyNotice("Ungültiges JSON für GitHub Rückkanal");
+      window.setTimeout(() => setCopyNotice(""), 2200);
+    }
   };
 
   const markTask = (taskId, status) => {
@@ -906,6 +981,10 @@ function App() {
     localStorage.setItem("jarvis.approvals", JSON.stringify(localApprovals));
   }, [localApprovals]);
 
+  useEffect(() => {
+    localStorage.setItem("jarvis.githubReturnChannel", JSON.stringify(manualGitHubStatus));
+  }, [manualGitHubStatus]);
+
 
 
   async function sendMessage(customMessage) {
@@ -978,6 +1057,8 @@ function App() {
             localStorage.removeItem("jarvis.executiveDecisions");
             localStorage.removeItem("jarvis.commandTasks");
             localStorage.removeItem("jarvis.approvals");
+            setManualGitHubStatus(createGitHubReturnChannelStatus());
+            localStorage.removeItem("jarvis.githubReturnChannel");
           }}
         >
           + Neuer Chat
@@ -1278,8 +1359,53 @@ function App() {
             <div className="manusDetails">
               <span>Letzter Task: {latestCodexTask.title}</span>
               <span>Status: {formatStatus(latestCodexTask.status)} · {latestCodexTask.externalStatus}</span>
-              <span>GitHub: {githubCapability.status} · Issue API: {githubCapability.canCreateIssueFromJarvis ? "verbunden" : "nicht verbunden"}</span>
+              <span>GitHub: {githubCapability.status} · Live-Rückkanal: {githubCapability.liveStatusConnected ? "verbunden" : "nicht verbunden"}</span>
               <span>Handoff-Status: {latestCodexTask.githubHandoffStatus || "draft"} · Modell: {GITHUB_HANDOFF_STATUS_VALUES.length} Statuswerte</span>
+              <div className="githubReturnChannel">
+                <strong>GitHub Rückkanal / Codex PR Status</strong>
+                <small className={githubCapability.liveStatusConnected ? "connectorLive" : "connectorWarning"}>
+                  {githubCapability.liveStatusConnected
+                    ? "Live-Status über sicheren Connector verbunden."
+                    : `Live-Status nicht verbunden (${githubCapability.status}). Manuelle Copy/Paste-Statusübernahme ist aktiv; GitHub-Buttons bleiben deaktiviert.`}
+                </small>
+                <div className="githubStatusGrid">
+                  <span><b>GitHub Issue URL</b>{latestGitHubReturnStatus.issueUrl || "nicht gesetzt"}</span>
+                  <span><b>Branch Name</b>{latestGitHubReturnStatus.branchName || "nicht gesetzt"}</span>
+                  <span><b>Commit SHA</b>{latestGitHubReturnStatus.commitSha || "nicht gesetzt"}</span>
+                  <span><b>PR URL</b>{latestGitHubReturnStatus.prUrl || "nicht gesetzt"}</span>
+                  <span><b>PR Status</b>{latestGitHubReturnStatus.prStatus}</span>
+                  <span><b>Checks</b>{latestGitHubReturnStatus.checksStatus}</span>
+                  <span><b>Review Status</b>{latestGitHubReturnStatus.reviewStatus}</span>
+                  <span><b>Blocker</b>{latestGitHubReturnStatus.blockerNotes || "keine Angabe"}</span>
+                  <span><b>Nächste notwendige Freigabe</b>{nextGitHubApproval}</span>
+                  <span><b>Zuletzt aktualisiert</b>{latestGitHubReturnStatus.lastUpdatedAt || "noch nie"}</span>
+                </div>
+                <details className="briefingBox">
+                  <summary>Manuelle Statusübernahme bearbeiten</summary>
+                  <div className="manualStatusForm">
+                    {GITHUB_RETURN_CHANNEL_FIELDS.map((field) => (
+                      <label key={field.key}>
+                        {field.label}
+                        <input
+                          value={latestGitHubReturnStatus[field.key] || ""}
+                          placeholder={field.placeholder}
+                          onChange={(event) => updateGitHubReturnStatus(field.key, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                    <label className="checkboxLine">
+                      <input
+                        type="checkbox"
+                        checked={latestGitHubReturnStatus.humanApprovalRequired}
+                        onChange={(event) => updateGitHubReturnStatus("humanApprovalRequired", event.target.checked)}
+                      />
+                      Menschliche Freigabe weiterhin erforderlich
+                    </label>
+                  </div>
+                </details>
+                <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify(latestGitHubReturnStatus, null, 2), "Codex PR Status kopiert")}>Codex PR Status kopieren</button>
+                <button className="miniAction" onClick={importGitHubReturnStatus}>Manuellen Status einfügen</button>
+              </div>
               <details className="briefingBox">
                 <summary>Codex-Handoff anzeigen</summary>
                 <pre className="promptBox">{latestCodexHandoffText}</pre>
@@ -1303,8 +1429,9 @@ function App() {
               <button className="miniAction" disabled={!githubCapability.canCreateIssueFromJarvis} title={githubCapability.issueCreationDisabledReason || "Nur nach menschlichem GO"}>
                 GitHub Issue erstellen{githubCapability.canCreateIssueFromJarvis ? " (nach GO)" : " deaktiviert"}
               </button>
-              <button className="miniAction" disabled={!githubCapability.canReadPrStatus} title={githubCapability.issueCreationDisabledReason || "Nur nach menschlichem GO"}>PR-/Issue-Status prüfen deaktiviert</button>
+              <button className="miniAction" disabled={!githubCapability.canReadPrStatus} title={githubCapability.prStatusDisabledReason || "Nur nach menschlichem GO"}>PR-/Issue-Status live prüfen{githubCapability.canReadPrStatus ? " (nach GO)" : " deaktiviert"}</button>
               {!githubCapability.canCreateIssueFromJarvis && <small>{githubCapability.issueCreationDisabledReason}</small>}
+              {!githubCapability.canReadPrStatus && <small>{githubCapability.prStatusDisabledReason}</small>}
             </div>
           ) : <small>Kein Codex-Task erkannt · Folgeauftrag wird bei Technik-/Codex-Aufgaben erzeugt.</small>}
         </div>
