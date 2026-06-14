@@ -915,6 +915,35 @@ function App() {
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
   const DIRECT_CHATGPT_URL = "/api/chatgpt";
 
+  async function requestChatGptAnswer(userMessage) {
+    try {
+      const directResponse = await fetch(DIRECT_CHATGPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage }),
+      });
+
+      if (!directResponse.ok) throw new Error(`Direct CEO ChatGPT unavailable: ${directResponse.status}`);
+      const directData = await directResponse.json();
+      return {
+        answer: directData.output || "Keine Antwort erhalten.",
+        ceoStatus: directData.status || "connected_direct",
+      };
+    } catch {
+      const response = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatInput: userMessage }),
+      });
+
+      const data = await response.json();
+      return {
+        answer: data.output || "Keine Antwort erhalten.",
+        ceoStatus: "fallback_n8n",
+      };
+    }
+  }
+
   const speakWithBrowser = useCallback((text) => {
     if (!("speechSynthesis" in window) || !text) {
       setVoiceStatus("blocked");
@@ -1124,9 +1153,22 @@ function App() {
     }
 
     if (conversationIntent === "conversation") {
-      const conversationalAnswer = generateConversationalCeoReply(userMessage);
-      setChat((old) => [...old, { role: "jarvis", text: conversationalAnswer, summary: conversationalAnswer }]);
-      speak(conversationalAnswer);
+      setLoading(true);
+
+      try {
+        const { answer, ceoStatus } = await requestChatGptAnswer(userMessage);
+        setCeoConnectionStatus(ceoStatus);
+        setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
+        speak(answer);
+      } catch (error) {
+        console.error(error);
+        setCeoConnectionStatus("failed");
+        const fallbackAnswer = generateConversationalCeoReply(userMessage);
+        setChat((old) => [...old, { role: "jarvis", text: fallbackAnswer, summary: fallbackAnswer }]);
+        speak(fallbackAnswer);
+      }
+
+      setLoading(false);
       return;
     }
 
@@ -1139,32 +1181,7 @@ function App() {
     setLoading(true);
 
     try {
-      let answer = "";
-      let ceoStatus = "connected_direct";
-
-      try {
-        const directResponse = await fetch(DIRECT_CHATGPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userMessage }),
-        });
-
-        if (!directResponse.ok) throw new Error(`Direct CEO ChatGPT unavailable: ${directResponse.status}`);
-        const directData = await directResponse.json();
-        answer = directData.output || "Keine Antwort erhalten.";
-        ceoStatus = directData.status || "connected_direct";
-      } catch {
-        const response = await fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatInput: userMessage }),
-        });
-
-        const data = await response.json();
-        answer = data.output || "Keine Antwort erhalten.";
-        ceoStatus = "fallback_n8n";
-      }
-
+      const { answer, ceoStatus } = await requestChatGptAnswer(userMessage);
       setCeoConnectionStatus(ceoStatus);
 
       setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
