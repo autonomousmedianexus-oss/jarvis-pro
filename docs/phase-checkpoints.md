@@ -98,3 +98,12 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - Manuelle Copy/Paste-Statusübernahme ist lokal möglich, damit Codex-Arbeit an Jarvis zurückgemeldet werden kann, ohne Tokens im Browser zu speichern.
 - Keine Merge-/Deploy-Funktion und kein direkter GitHub Token im Frontend.
 - n8n-Chat-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.
+
+## Phase 3.0b Checkpoint – Conversational CEO Mode + Manus Bridge
+
+- Conversational CEO Mode eingeführt: normale Chatnachrichten bleiben Gespräch und starten keine Agentenkette.
+- Auftragserkennung ergänzt: Statusfragen, unklare Wünsche, normale Unterhaltung und klare Delegation werden getrennt.
+- ManusTask-Modell und ManusReport-Modell vorbereitet.
+- ChatGPT→Manus Bridge zeigt `task_prepared`, Research-GO, Login-GO, Action-GO und Connector-Status.
+- Manus Live Connector Detection bleibt serverseitig gedacht; ohne Connector Status `needs_manus_connector`, Live-Button disabled, Copy/Handoff aktiv.
+- n8n-Fallback-Vertrag bleibt `{ chatInput: userMessage }` und `data.output`.
