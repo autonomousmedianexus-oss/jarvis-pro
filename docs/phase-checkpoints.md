@@ -107,3 +107,13 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - ChatGPT→Manus Bridge zeigt `task_prepared`, Research-GO, Login-GO, Action-GO und Connector-Status.
 - Manus Live Connector Detection bleibt serverseitig gedacht; ohne Connector Status `needs_manus_connector`, Live-Button disabled, Copy/Handoff aktiv.
 - n8n-Fallback-Vertrag bleibt `{ chatInput: userMessage }` und `data.output`.
+
+
+## Phase 3.0c – Manus Live Connector Integration
+
+- Status: umgesetzt, Review offen.
+- COO Manus hat eine serverseitige Detection für API/Webhook/MCP/Browser-Operator/n8n-Execution-Connectoren.
+- `/api/manus/task` gibt ohne Connector sauber `needs_manus_connector` zurück und führt keine externe Aktion aus.
+- UI zeigt Connector-Status, deaktiviert den Live-Senden-Button ohne Connector und zeigt ManusReport sowie CodexTaskDraft an.
+- n8n-Chat-Fallback bleibt unverändert: `{ chatInput: userMessage }` → `data.output`.
+- Secrets bleiben serverseitig; `.env.example` enthält nur Platzhalter.

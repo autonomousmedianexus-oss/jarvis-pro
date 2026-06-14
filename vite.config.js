@@ -54,6 +54,171 @@ async function readJsonBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
+
+const MANUS_CONNECTOR_ENV = [
+  { key: "MANUS_API_URL", type: "api" },
+  { key: "MANUS_WEBHOOK_URL", type: "webhook" },
+  { key: "MANUS_MCP_URL", type: "mcp" },
+  { key: "MANUS_BROWSER_OPERATOR_CONNECTOR_URL", type: "browser_operator" },
+  { key: "N8N_MANUS_EXECUTION_WEBHOOK", type: "n8n_execution_webhook" },
+];
+
+const MANUS_FORBIDDEN_ACTIONS = [
+  "login",
+  "account_access",
+  "submit_forms",
+  "purchase",
+  "payment",
+  "upload",
+  "external_effect",
+  "run_codex",
+  "commit_pr",
+  "merge",
+  "deploy",
+];
+
+function detectManusServerConnector(env) {
+  const connector = MANUS_CONNECTOR_ENV.find((item) => Boolean(env[item.key]));
+  return {
+    status: connector ? "manus_live_connected" : "needs_manus_connector",
+    connectorType: connector?.type || "none",
+    configuredEnv: connector?.key || "none",
+    serverSideOnly: true,
+    tokenInFrontend: false,
+    checked: ["MANUS_API_KEY", ...MANUS_CONNECTOR_ENV.map((item) => item.key)],
+  };
+}
+
+function createNeedsManusConnectorResponse(env) {
+  return {
+    ...detectManusServerConnector(env),
+    error: "needs_manus_connector",
+    message: "Keine sichere serverseitige Manus API/Webhook/MCP/Browser-Operator/n8n-Execution-Schnittstelle konfiguriert.",
+    manualHandoff: true,
+    allowedManualActions: ["ManusTask kopieren", "Report manuell einfügen", "CodexTaskDraft manuell vorbereiten"],
+  };
+}
+
+function normalizeManusReport(data) {
+  const source = data?.manusReport || data?.report || data || {};
+  return {
+    status: source.status || "report_ready",
+    summary: source.summary || source.output || source.message || "Manus hat geantwortet.",
+    findings: Array.isArray(source.findings) ? source.findings : [],
+    risks: Array.isArray(source.risks) ? source.risks : [],
+    recommendation: source.recommendation || "ManusReport prüfen und nächstes menschliches GO entscheiden.",
+    sourcesChecked: Array.isArray(source.sourcesChecked) ? source.sourcesChecked : [],
+    blockers: Array.isArray(source.blockers) ? source.blockers : [],
+    codexTaskDraft: source.codexTaskDraft || "",
+    approvalNeeded: source.approvalNeeded ?? true,
+  };
+}
+
+function validateManusTaskPayload(payload) {
+  if (!payload?.manusTask || typeof payload.manusTask !== "object") {
+    return "manusTask JSON is required";
+  }
+
+  const requestedActions = [
+    ...(Array.isArray(payload.manusTask.requestedActions) ? payload.manusTask.requestedActions : []),
+    ...(Array.isArray(payload.requestedActions) ? payload.requestedActions : []),
+  ].map((item) => String(item).toLowerCase());
+
+  const forbidden = MANUS_FORBIDDEN_ACTIONS.find((action) => requestedActions.includes(action));
+  if (forbidden) return `Forbidden action requires explicit GO outside this route: ${forbidden}`;
+  return "";
+}
+
+async function forwardManusTask(env, payload) {
+  const connector = detectManusServerConnector(env);
+  if (connector.status !== "manus_live_connected") {
+    return { statusCode: 503, body: createNeedsManusConnectorResponse(env) };
+  }
+
+  const endpoint = env[connector.configuredEnv];
+  const headers = { "Content-Type": "application/json" };
+  if (env.MANUS_API_KEY) headers.Authorization = `Bearer ${env.MANUS_API_KEY}`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      type: "jarvis_manus_task",
+      safetyMode: "research_analysis_codex_draft_only",
+      forbiddenActions: MANUS_FORBIDDEN_ACTIONS,
+      payload,
+    }),
+  });
+
+  const text = await response.text();
+  const data = text ? (() => {
+    try { return JSON.parse(text); } catch { return { summary: text }; }
+  })() : {};
+
+  if (!response.ok) {
+    return { statusCode: response.status, body: { status: "failed", error: "manus_connector_failed", connectorType: connector.connectorType } };
+  }
+
+  return {
+    statusCode: 200,
+    body: {
+      status: "report_ready",
+      connectorType: connector.connectorType,
+      report: normalizeManusReport(data),
+    },
+  };
+}
+
+function jarvisManusDevProxy(env) {
+  return {
+    name: "jarvis-manus-dev-proxy",
+    configureServer(server) {
+      server.middlewares.use("/api/manus/status", async (req, res) => {
+        if (req.method !== "GET") {
+          res.statusCode = 405;
+          res.end("Method not allowed");
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(JSON.stringify(detectManusServerConnector(env)));
+      });
+
+      server.middlewares.use("/api/manus/task", async (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.end("Method not allowed");
+          return;
+        }
+
+        try {
+          const payload = await readJsonBody(req);
+          const validationError = validateManusTaskPayload(payload);
+          if (validationError) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ status: "blocked", error: validationError }));
+            return;
+          }
+
+          const result = await forwardManusTask(env, payload);
+          res.statusCode = result.statusCode;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(result.body));
+        } catch (error) {
+          server.config.logger.error(error);
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ status: "failed", error: "Jarvis Manus proxy error" }));
+        }
+      });
+    },
+  };
+}
+
 function jarvisTtsDevProxy(env) {
   return {
     name: "jarvis-tts-dev-proxy",
@@ -209,6 +374,6 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
-    plugins: [react(), jarvisChatGptDevProxy(env), jarvisTtsDevProxy(env)],
+    plugins: [react(), jarvisChatGptDevProxy(env), jarvisTtsDevProxy(env), jarvisManusDevProxy(env)],
   };
 });

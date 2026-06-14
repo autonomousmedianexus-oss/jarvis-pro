@@ -220,3 +220,16 @@ Der n8n Chat-Vertrag bleibt unverändert:
 Jarvis trennt normale CEO-Unterhaltung von klarer Delegation. Alltagsfragen erzeugen keine Executive Summary, keine Command-Bus-Aufgabe und keinen ManusTask. Klare Aufträge wie „GO Manus“, „recherchiere das“ oder „erstelle einen ManusTask“ erzeugen lokal eine CEO-Bewertung, einen Command-Bus-Task und ein ManusTask-Modell mit `task_prepared`.
 
 Der COO-Manus-Bereich zeigt den ChatGPT→Manus-Bridge-Status, den Manus Connector Status (`manus_live_connected` oder `needs_manus_connector`), Research-GO, Login-GO und Action-GO separat. Ohne sicheren serverseitigen Manus Connector bleibt „Manus live senden“ deaktiviert; Copy/Handoff bleibt verfügbar. Der n8n-Fallback-Vertrag bleibt unverändert: `{ chatInput: userMessage }` → `data.output`.
+
+
+## Phase 3.0c: Manus Live Connector
+
+Jarvis prüft COO Manus jetzt über sichere serverseitige Routen:
+
+- `GET /api/manus/status` erkennt, ob ein Manus-Connector vorhanden ist.
+- `POST /api/manus/task` nimmt einen `ManusTask` entgegen und liefert einen normalisierten `ManusReport` oder `needs_manus_connector`.
+- Unterstützte serverseitige Platzhalter: `MANUS_API_KEY`, `MANUS_API_URL`, `MANUS_WEBHOOK_URL`, `MANUS_MCP_URL`, `MANUS_BROWSER_OPERATOR_CONNECTOR_URL`, `N8N_MANUS_EXECUTION_WEBHOOK`.
+- Es werden keine Manus-Tokens im Frontend genutzt oder angezeigt.
+- Ohne Connector bleibt der ManusTask lokal kopierbar und der n8n-Chat-Fallback bleibt unverändert.
+
+Sicherheitsgrenze: Manus darf ohne separates GO nur öffentliche Recherche/Analyse und CodexTaskDrafts vorbereiten. Login, Accounts, Formulare, Käufe, Zahlungen, Uploads, Codex-Ausführung, Commit/PR, Merge und Deploy bleiben blockiert.
