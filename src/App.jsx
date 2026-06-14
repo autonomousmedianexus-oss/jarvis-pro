@@ -1194,14 +1194,16 @@ function App() {
 
       if (!response.ok || data.status === "failed" || data.status === "needs_manus_connector") {
         const errorMessage = data.errorMessage || data.message || data.error || `Manus API Fehler: ${response.status}`;
+        const httpStatus = data.httpStatus || response.status;
         setManusLiveStatus(data.status === "needs_manus_connector" ? "needs_manus_connector" : MANUS_LIVE_STATUS.FAILED);
-        setManusLiveResult((old) => ({ ...old, errorMessage }));
-        setChat((old) => [...old, { role: "jarvis", text: `Manus Live Flow: failed\nerror_message: ${errorMessage}`, summary: `Manus Live Flow failed: ${errorMessage}` }]);
+        setManusLiveResult((old) => ({ ...old, errorMessage: `HTTP ${httpStatus}: ${errorMessage}` }));
+        setChat((old) => [...old, { role: "jarvis", text: `Manus Live Flow: failed\nhttp_status: ${httpStatus}\nerror_message: ${errorMessage}`, summary: `Manus Live Flow failed: ${errorMessage}` }]);
         return;
       }
 
       const report = data.report || createManusReportModel();
-      const finalStatus = data.status === MANUS_LIVE_STATUS.SENT && !report.summary ? MANUS_LIVE_STATUS.SENT : (report.status || data.status || MANUS_LIVE_STATUS.REPORT);
+      const hasMessageReport = Array.isArray(data.messages) && data.messages.length > 0;
+      const finalStatus = data.status === MANUS_LIVE_STATUS.SENT && !hasMessageReport ? MANUS_LIVE_STATUS.SENT : (report.status || data.status || MANUS_LIVE_STATUS.REPORT);
       setCommands((old) => old.map((task) => task.id === latestManusTask.id
         ? { ...task, status: finalStatus, manusReport: report, manusTask: { ...task.manusTask, liveStatus: finalStatus, manusTaskId: data.manusTaskId || "", taskUrl: data.taskUrl || "" } }
         : task));
@@ -1624,7 +1626,7 @@ function App() {
               <span>Research-GO: {localApprovals[latestManusTask.id] === "approved_for_research" || ["sending_to_manus", "task_sent", "report_ready"].includes(manusLiveStatus) ? "erteilt" : "nicht erteilt"}</span>
               <span>Live Send: {manusLiveStatus}</span>
               <span>Manus Task ID: {manusLiveResult.manusTaskId || latestManusTask.manusTask?.manusTaskId || "nicht geliefert"}</span>
-              <span>Letzter Fehler: {manusLiveResult.errorMessage || "kein Fehler"}</span>
+              <span>Letzter Fehler / error_message: {manusLiveResult.errorMessage || "kein Fehler"}</span>
               <span>Manus Ort: {manusLiveResult.taskUrl ? manusLiveResult.taskUrl : "Kein Link von API. Bitte in Manus unter Neue Aufgabe / Agent / Verlauf prüfen."}</span>
               <span>Login-GO separat: ja · Action-GO separat: ja</span>
               <span>Web Research Task: {latestManusTask.webResearchTask?.id || "nicht erforderlich"}</span>
@@ -1654,6 +1656,7 @@ function App() {
               <details className="briefingBox" open={latestManusTask.manusReport?.status === "report_ready"}>
                 <summary>ManusReport anzeigen</summary>
                 <div className="reportGrid">
+                  <span><b>status</b>{latestManusTask.manusReport?.status || manusLiveStatus || "offen"}</span>
                   <span><b>summary</b>{latestManusTask.manusReport?.summary || "offen"}</span>
                   <span><b>findings</b>{(latestManusTask.manusReport?.findings || []).join(" · ") || "offen"}</span>
                   <span><b>risks</b>{(latestManusTask.manusReport?.risks || []).join(" · ") || "offen"}</span>
@@ -1662,6 +1665,7 @@ function App() {
                   <span><b>blockers</b>{(latestManusTask.manusReport?.blockers || []).join(" · ") || "offen"}</span>
                   <span><b>codexTaskDraft</b>{latestManusTask.manusReport?.codexTaskDraft || "offen"}</span>
                   <span><b>approvalNeeded</b>{String(latestManusTask.manusReport?.approvalNeeded ?? true)}</span>
+                  <span><b>messagesStatus</b>{latestManusTask.manusReport?.messagesStatus || "not_requested"}</span>
                 </div>
               </details>
               {latestManusTask.manusReport?.codexTaskDraft && (
