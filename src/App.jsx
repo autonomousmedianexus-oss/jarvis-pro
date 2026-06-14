@@ -332,9 +332,12 @@ function getConversationIntent(text) {
   const normalized = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
   const statusTerms = ["status", "verbunden", "verbindung", "direktverbindung", "connected", "connector", "manus verbunden", "chatgpt verbunden", "aktueller status"];
   const explicitDelegationTerms = [
-    "prüfe diese idee", "prüf diese idee", "recherchiere", "bereite manus vor", "erstelle einen manustask",
-    "gib das an manus weiter", "mach daraus einen operativen auftrag", "starte research", "go research",
-    "go manus", "erstelle codex-auftrag", "bereite umsetzung vor", "research-go", "manus-task", "manus task",
+    "erstelle eine ceo-einschätzung", "erstelle eine ceo einschätzung", "ceo-einschätzung erstellen", "ceo einschätzung erstellen",
+    "erstelle eine executive summary", "executive summary erstellen",
+    "bereite manus vor", "erstelle einen manustask", "erstelle einen manus task", "gib das an manus weiter",
+    "starte research", "go research", "go manus",
+    "mach daraus einen operativen auftrag", "prüfe diese idee operativ mit manus", "prüf diese idee operativ mit manus",
+    "erstelle codex-auftrag", "bereite umsetzung vor", "research-go", "manus-task", "manus task",
   ];
   const ambiguousTerms = ["mach das", "tu das", "setz das um", "starte das", "weiter damit"];
 
@@ -841,6 +844,7 @@ function App() {
   const [executiveDecisions, setExecutiveDecisions] = useState(() => JSON.parse(localStorage.getItem("jarvis.executiveDecisions") || "[]"));
   const [commands, setCommands] = useState(() => JSON.parse(localStorage.getItem("jarvis.commandTasks") || "[]"));
   const [manualGitHubStatus, setManualGitHubStatus] = useState(() => JSON.parse(localStorage.getItem("jarvis.githubReturnChannel") || "null") || createGitHubReturnChannelStatus());
+  const [conversationMode, setConversationMode] = useState("Gespräch");
   const chatEndRef = useRef(null);
   const voiceQueueRef = useRef([]);
   const selectedVoiceRef = useRef(null);
@@ -915,12 +919,12 @@ function App() {
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
   const DIRECT_CHATGPT_URL = "/api/chatgpt";
 
-  async function requestChatGptAnswer(userMessage) {
+  async function requestChatGptAnswer(userMessage, mode = "conversation") {
     try {
       const directResponse = await fetch(DIRECT_CHATGPT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ message: userMessage, mode }),
       });
 
       if (!directResponse.ok) throw new Error(`Direct CEO ChatGPT unavailable: ${directResponse.status}`);
@@ -1138,6 +1142,8 @@ function App() {
     setChat((old) => [...old, { role: "user", text: userMessage }]);
     const conversationIntent = getConversationIntent(userMessage);
 
+    setConversationMode(conversationIntent === "delegation" ? "Delegation" : "Gespräch");
+
     if (conversationIntent === "clarify") {
       const clarification = "Was genau soll Manus prüfen oder vorbereiten? Formuliere bitte Ziel, Kontext und gewünschtes Ergebnis — dann erstelle ich den ManusTask.";
       setChat((old) => [...old, { role: "jarvis", text: clarification, summary: clarification }]);
@@ -1156,7 +1162,7 @@ function App() {
       setLoading(true);
 
       try {
-        const { answer, ceoStatus } = await requestChatGptAnswer(userMessage);
+        const { answer, ceoStatus } = await requestChatGptAnswer(userMessage, "conversation");
         setCeoConnectionStatus(ceoStatus);
         setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
         speak(answer);
@@ -1181,7 +1187,7 @@ function App() {
     setLoading(true);
 
     try {
-      const { answer, ceoStatus } = await requestChatGptAnswer(userMessage);
+      const { answer, ceoStatus } = await requestChatGptAnswer(userMessage, "delegation");
       setCeoConnectionStatus(ceoStatus);
 
       setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
@@ -1308,6 +1314,7 @@ function App() {
             <span>{time.toLocaleTimeString("de-CH")}</span>
             <span>VOICE {voiceStatusLabel.toUpperCase()}</span>
             <span>{CEO_CONNECTION_STATUS_LABELS[ceoConnectionStatus].toUpperCase()}</span>
+            <span>MODUS: {conversationMode.toUpperCase()}</span>
           </div>
 
           <h1>JARVIS PRO</h1>
@@ -1326,7 +1333,7 @@ function App() {
               </p>
               <div className="welcomeGrid">
                 <span>JARVIS INTERFACE</span>
-                <span>CEO VOR COMMAND BUS</span>
+                <span>MODUS: {conversationMode}</span>
                 <span>HUMAN APPROVAL</span>
               </div>
             </div>
@@ -1418,6 +1425,7 @@ function App() {
         <div className="statusModule ceoLayer">
           <p>CEO ChatGPT Layer</p>
           <strong>{CEO_CONNECTION_STATUS_LABELS[ceoConnectionStatus]}</strong>
+          <small>Modus: {conversationMode}</small>
           <small>Jarvis → /api/chatgpt → OpenAI zuerst. Bei Nichtverfügbarkeit bleibt der bestehende n8n-Fallback mit {`{ chatInput: userMessage }`} und data.output aktiv.</small>
           {latestDecision ? (
             <details className="briefingBox" open>

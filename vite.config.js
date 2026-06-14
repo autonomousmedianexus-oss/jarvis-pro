@@ -8,10 +8,23 @@ const DEFAULT_TTS_VOICE = "cedar";
 const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 const JARVIS_TTS_INSTRUCTIONS =
   "Sprich auf Deutsch, ruhig, präzise, männlich, souverän, wie eine technische KI-Kommandozentrale. Nicht übertrieben emotional. Kurze Pausen zwischen wichtigen Sätzen.";
-const CEO_CHATGPT_SYSTEM_PROMPT = `
+const CEO_CHATGPT_CONVERSATION_PROMPT = `
+Du bist CEO ChatGPT im Jarvis-Pro Board und sprichst über Jarvis direkt mit dem Inhaber.
+Conversational Mode ist der Standard. Antworte auf Deutsch natürlich, beratend, strategisch und dialogisch wie ein normales ChatGPT-Gespräch.
+
+Wichtig:
+- Eine Idee, ein Satz, eine Frage oder ein Thema ist noch kein Auftrag.
+- Starte keine Agentenkette, keinen Command Bus, keine Executive Summary und keinen ManusTask.
+- Verwende keine nummerierte CEO-Ausführungskette.
+- Wenn der Nutzer nur ein Thema nennt, greife es als Gesprächseinstieg auf, ordne es kurz ein und stelle bei Bedarf eine sinnvolle Folgefrage.
+- Bleibe risikobewusst und unternehmerisch, aber ohne operative Delegation.
+`.trim();
+
+const CEO_CHATGPT_DELEGATION_PROMPT = `
 Du bist CEO ChatGPT im Jarvis-Pro Board.
+Delegation Mode ist nur aktiv, weil der Nutzer explizit eine CEO-Einschätzung, Executive Summary, Research-Freigabe, Manus-Vorbereitung oder einen operativen Auftrag ausgelöst hat.
 Antworte auf Deutsch, direkt, souverän und umsetzungsorientiert.
-Bewerte jeden Nutzerauftrag nach:
+Bewerte den expliziten Nutzerauftrag nach:
 - Ziel
 - Risiko
 - Priorität
@@ -135,6 +148,8 @@ function jarvisChatGptDevProxy(env) {
         try {
           const payload = await readJsonBody(req);
           const userMessage = String(payload.message || payload.chatInput || "").trim();
+          const requestMode = payload.mode === "delegation" ? "delegation" : "conversation";
+          const systemPrompt = requestMode === "delegation" ? CEO_CHATGPT_DELEGATION_PROMPT : CEO_CHATGPT_CONVERSATION_PROMPT;
 
           if (!userMessage) {
             res.statusCode = 400;
@@ -152,7 +167,7 @@ function jarvisChatGptDevProxy(env) {
             body: JSON.stringify({
               model: env.JARVIS_CHAT_MODEL || DEFAULT_CHAT_MODEL,
               messages: [
-                { role: "system", content: CEO_CHATGPT_SYSTEM_PROMPT },
+                { role: "system", content: systemPrompt },
                 { role: "user", content: userMessage },
               ],
               temperature: 0.3,
@@ -177,6 +192,7 @@ function jarvisChatGptDevProxy(env) {
             status: "connected_direct",
             provider: "openai",
             model: env.JARVIS_CHAT_MODEL || DEFAULT_CHAT_MODEL,
+            mode: requestMode,
           }));
         } catch (error) {
           server.config.logger.error(error);
