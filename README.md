@@ -233,3 +233,12 @@ Jarvis prüft COO Manus jetzt über sichere serverseitige Routen:
 - Ohne Connector bleibt der ManusTask lokal kopierbar und der n8n-Chat-Fallback bleibt unverändert.
 
 Sicherheitsgrenze: Manus darf ohne separates GO nur öffentliche Recherche/Analyse und CodexTaskDrafts vorbereiten. Login, Accounts, Formulare, Käufe, Zahlungen, Uploads, Codex-Ausführung, Commit/PR, Merge und Deploy bleiben blockiert.
+
+
+## Phase 3.0d: Minimal UI + Manus Live Flow
+
+Jarvis ist jetzt stärker auf den zentralen CEO-Chat fokussiert: normale Nachrichten bleiben im Modus **Gespräch**, während klare Aufträge wie „Bereite Manus vor …“ in **Delegation** wechseln. GO-Befehle wie „GO Research und Manus live senden“ wechseln in **Ausführung** und nutzen denselben Ablauf wie der Button **Manus live senden**.
+
+Der Manus-Live-Proxy ruft bei gesetztem `MANUS_API_URL` und `MANUS_API_KEY` serverseitig `/api/manus/task` auf und sendet den Key ausschließlich als `x-manus-api-key`. Secrets werden nicht ins Frontend gegeben. Jarvis zeigt `sending_to_manus`, `task_sent`, `report_ready` oder `failed` mit Fehlertext, Manus Task ID, Link/Hinweis und strukturiertem ManusReport an.
+
+Details: [Phase 3.0d Dokumentation](docs/phase-3-0d-minimal-ui-manus-live-flow.md).

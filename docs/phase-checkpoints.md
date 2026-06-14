@@ -117,3 +117,14 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - UI zeigt Connector-Status, deaktiviert den Live-Senden-Button ohne Connector und zeigt ManusReport sowie CodexTaskDraft an.
 - n8n-Chat-Fallback bleibt unverändert: `{ chatInput: userMessage }` → `data.output`.
 - Secrets bleiben serverseitig; `.env.example` enthält nur Platzhalter.
+
+
+## Phase 3.0d – Minimal Jarvis UI + echter Manus Live Flow
+
+- Zentraler Jarvis-Chat ist die Hauptoberfläche für Inhaber ↔ CEO ChatGPT.
+- Normale Themen bleiben Gesprächsmodus ohne ManusTask/Command Bus.
+- Klare Manus-/Research-/Codex-Aufträge wechseln in Delegation.
+- Chat-GO und Button-GO nutzen denselben Manus-Live-Send-Ablauf.
+- `/api/manus/task` verwendet serverseitig `x-manus-api-key`; keine Secrets im Frontend.
+- COO Manus zeigt Connector, Research-GO, Live Send, Manus Task ID, Fehler und letzten Report.
+- Details liegen kompakt in expandierbaren Bereichen; 1366px-Laptop-Fokus bleibt auf dem Hauptchat.

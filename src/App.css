@@ -1551,3 +1551,164 @@ body {
     max-height: none;
   }
 }
+
+/* Phase 3.0d: minimal Jarvis command interface */
+.layout {
+  grid-template-columns: 184px minmax(0, 1fr) 280px;
+}
+
+.brandPanel,
+.newChat,
+.sideFooter,
+.statusModule {
+  border-radius: 14px;
+}
+
+.sidebar,
+.statusPanel {
+  padding: 12px;
+}
+
+.brandPanel {
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.brandPanel small,
+.sideSection p,
+.sideFooter p,
+.header p,
+.statusBar span:nth-child(-n+3) {
+  display: none;
+}
+
+.sidebar .newChat {
+  padding: 9px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.agentCard {
+  grid-template-columns: 10px 1fr;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 7px;
+}
+
+.agentCard::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.95);
+}
+
+.agentCard span {
+  font-size: 12px;
+}
+
+.agentCard small {
+  grid-column: 2;
+  max-width: 100%;
+  justify-self: start;
+  font-size: 9px;
+}
+
+.header {
+  padding: 10px 12px;
+}
+
+.header h1 {
+  font-size: clamp(28px, 4vw, 42px);
+}
+
+.statusBar {
+  justify-content: center;
+}
+
+.chatBox {
+  padding: 18px clamp(18px, 3vw, 42px);
+}
+
+.welcome {
+  margin-top: 24px;
+  padding: 22px;
+}
+
+.inputArea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 12px;
+  padding: 14px;
+}
+
+.inputArea textarea {
+  max-width: none;
+  min-height: 92px;
+}
+
+.inputActions {
+  min-width: 0;
+}
+
+.statusModule:not(.manusPanel):not(.ceoLayer):not(.primary):not(.online) {
+  max-height: 58px;
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+
+.statusModule:not(.manusPanel):not(.ceoLayer):not(.primary):not(.online):hover,
+.statusModule:not(.manusPanel):not(.ceoLayer):not(.primary):not(.online):focus-within {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.statusModule p::after {
+  content: " · aufklappbar";
+  color: rgba(224, 251, 255, 0.42);
+}
+
+.manusPanel {
+  max-height: 52vh;
+  overflow: auto;
+}
+
+.reportGrid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.reportGrid span {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.42);
+  color: rgba(224, 251, 255, 0.78);
+  font-size: 12px;
+}
+
+.reportGrid b {
+  color: #93c5fd;
+}
+
+@media (max-width: 1366px) and (min-width: 901px) {
+  .layout {
+    grid-template-columns: 164px minmax(0, 1fr) 260px;
+  }
+
+  .inputArea {
+    grid-template-columns: 1fr;
+  }
+
+  .inputActions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .statusModule {
+    padding: 10px;
+  }
+}
