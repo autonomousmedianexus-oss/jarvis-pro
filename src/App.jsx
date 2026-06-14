@@ -25,6 +25,20 @@ const ROLES = {
 
 
 
+const MANUS_CONNECTOR_STATUS = import.meta.env.VITE_MANUS_SERVER_CONNECTOR === "true"
+  ? "manus_live_connected"
+  : "needs_manus_connector";
+
+const MANUS_TASK_STATUS = "task_prepared";
+
+const MANUS_TASK_TYPES = {
+  research: "research",
+  review: "review",
+  planning: "planning",
+  codexPreparation: "codex_prompt_preparation",
+};
+
+
 const MANUS_WEB_CAPABILITIES = [
   "business_model_research",
   "website_review",
@@ -73,7 +87,7 @@ const CONNECTION_STATUS = {
   },
   COO_MANUS: {
     component: "COO Manus",
-    status: "local_active",
+    status: MANUS_CONNECTOR_STATUS,
     possible: "Lokale Manus-Aufträge, Research-Briefings, Sprintpläne und operative Review-Templates erstellen.",
     missing: "Manus API/Webhook/MCP nicht konfiguriert; Login nur manuell nach GO.",
     allowedAfterGo: "Research-GO und Login-GO lokal markieren; externes Handoff nur bei später verbundener Integration.",
@@ -125,6 +139,8 @@ const CONNECTION_STATUS = {
 const TOOL_REGISTRY = [
   { name: "detectCapabilities", mode: "local" },
   { name: "createManusTask", mode: "prepared" },
+  { name: "detectManusLiveConnector", mode: "local" },
+  { name: "sendManusLiveAfterGo", mode: "server_required" },
   { name: "createCodexTask", mode: "prepared" },
   { name: "createGitHubIssueDraft", mode: "prepared" },
   { name: "copyGitHubIssueDraft", mode: "local" },
@@ -310,6 +326,92 @@ function createVisibleSummary(text) {
   const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [normalized];
   const summary = sentences.slice(0, 2).join(" ").trim();
   return summary.length > 260 ? `${summary.slice(0, 257)}...` : summary;
+}
+
+function getConversationIntent(text) {
+  const normalized = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const statusTerms = ["status", "verbunden", "verbindung", "direktverbindung", "connected", "connector", "manus verbunden", "chatgpt verbunden", "aktueller status"];
+  const explicitDelegationTerms = [
+    "prüfe diese idee", "prüf diese idee", "recherchiere", "bereite manus vor", "erstelle einen manustask",
+    "gib das an manus weiter", "mach daraus einen operativen auftrag", "starte research", "go research",
+    "go manus", "erstelle codex-auftrag", "bereite umsetzung vor", "research-go", "manus-task", "manus task",
+  ];
+  const ambiguousTerms = ["mach das", "tu das", "setz das um", "starte das", "weiter damit"];
+
+  if (includesAny(normalized, statusTerms)) return "status";
+  if (includesAny(normalized, ambiguousTerms) && normalized.length < 80) return "clarify";
+  if (includesAny(normalized, explicitDelegationTerms)) return "delegation";
+  return "conversation";
+}
+
+function generateConversationalCeoReply(text) {
+  const normalized = String(text || "").toLowerCase().trim();
+  if (/^(hallo|hi|hey|test)\b/.test(normalized)) {
+    return "Hallo. Ich bin verbunden. Sag mir einfach, worüber wir sprechen sollen — ich antworte normal im CEO-Modus und starte Manus erst bei klarem Auftrag oder GO.";
+  }
+  if (normalized.includes("unsicher")) {
+    return "Verstanden. Dann lass uns es ruhig sortieren: Was ist die Entscheidung, welche Optionen siehst du, und welches Risiko macht dich gerade unsicher? Ich helfe dir, die beste nächste Entscheidung zu finden — ohne etwas zu delegieren.";
+  }
+  if (normalized.includes("welche option") || normalized.includes("empfehlen") || normalized.includes("was hältst du")) {
+    return "Meine CEO-Sicht: Wir sollten zuerst Ziel, Aufwand, Risiko und Reversibilität vergleichen. Die bessere Option ist meistens die, die schnell validierbar ist, wenig irreversible Kosten erzeugt und einen klaren nächsten Lernschritt liefert. Wenn du mir die Optionen gibst, bewerte ich sie direkt.";
+  }
+  if (normalized.includes("wie gehen wir weiter")) {
+    return "Nächster sinnvoller Schritt: Wir klären Ziel, gewünschtes Ergebnis und Grenzen. Danach entscheide ich mit dir, ob es nur ein Gespräch bleibt oder ob Manus einen vorbereiteten Auftrag bekommen soll.";
+  }
+  return "Verstanden. Ich bleibe in der CEO-Rolle: strategisch, priorisierend und risikobewusst. Erzähl mir kurz den Kontext oder die Optionen, dann gebe ich dir eine direkte Einschätzung — ohne Agenten zu starten, solange du keinen klaren Auftrag oder GO gibst.";
+}
+
+function generateStatusReply({ ceoStatus, manusCapability }) {
+  return `Status kurz:\n- CEO ChatGPT: ${CEO_CONNECTION_STATUS_LABELS[ceoStatus] || ceoStatus}\n- COO Manus Connector: ${manusCapability.status}\n- Manus Live senden: ${manusCapability.canSendLive ? "bereit nach GO" : "deaktiviert, sicherer serverseitiger Connector fehlt"}\n- n8n Fallback: aktiv; Vertrag bleibt { chatInput: userMessage } → data.output\n- Delegation: keine gestartet.`;
+}
+
+function detectManusCapability() {
+  const serverConnector = import.meta.env.VITE_MANUS_SERVER_CONNECTOR === "true";
+  const connectorType = import.meta.env.VITE_MANUS_CONNECTOR_TYPE || "none";
+  const status = serverConnector ? "manus_live_connected" : "needs_manus_connector";
+  return {
+    status,
+    connectorType: serverConnector ? connectorType : "none",
+    serverSideOnly: true,
+    tokenInFrontend: false,
+    canSendLive: serverConnector,
+    missing: serverConnector ? "" : "Keine sichere Manus API/MCP/Webhook/Browser-Operator-Bridge serverseitig konfiguriert.",
+  };
+}
+
+function inferManusTaskType(text) {
+  const normalized = text.toLowerCase();
+  if (includesAny(normalized, ["recherch", "research", "wettbewerb", "competitor"])) return MANUS_TASK_TYPES.research;
+  if (includesAny(normalized, ["website", "webseite", "prüf", "review"])) return MANUS_TASK_TYPES.review;
+  if (includesAny(normalized, ["codex", "umsetzung", "implementierung"])) return MANUS_TASK_TYPES.codexPreparation;
+  return MANUS_TASK_TYPES.planning;
+}
+
+function createManusTaskModel(sourceMessage, sequence) {
+  const now = new Date().toISOString();
+  const taskType = inferManusTaskType(sourceMessage);
+  return {
+    id: `MANUS-${String(sequence).padStart(3, "0")}`,
+    title: `COO Manus Auftrag ${String(sequence).padStart(2, "0")}`,
+    objective: "Klaren CEO-Auftrag operativ prüfen, Research vorbereiten und nächste Entscheidung für den Owner ableiten.",
+    sourceUserRequest: sourceMessage,
+    assignedBy: "CEO ChatGPT",
+    assignedTo: "COO Manus",
+    taskType,
+    researchQuestions: ["Was ist das Ziel?", "Welche Chancen, Risiken und Abhängigkeiten gibt es?", "Welche nächsten Schritte sind ohne Login oder externe Wirkung erlaubt?"],
+    allowedActions: ["Öffentliche Recherche vorbereiten", "Analyseauftrag formulieren", "Wettbewerbsanalyse vorbereiten", "Website-Prüfung vorbereiten", "Codex-Prompt später vorbereiten"],
+    blockedActions: ["Login", "Account-Zugriff", "Formulare absenden", "Käufe", "Zahlungen", "Uploads", "externe Aktionen mit Wirkung", "Merge", "Deploy"],
+    approvalRequired: true,
+    requiredApprovalType: "Research-GO; Login-GO und Action-GO separat erforderlich",
+    expectedOutput: "ManusReport mit status, summary, findings, risks, recommendation, sourcesChecked, blockers, codexTaskDraft und approvalNeeded.",
+    status: MANUS_TASK_STATUS,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createManusReportModel() {
+  return { status: "pending", summary: "", findings: [], risks: [], recommendation: "", sourcesChecked: [], blockers: [], codexTaskDraft: "", approvalNeeded: true };
 }
 
 function generateExecutiveDecision(sourceMessage, context = {}) {
@@ -616,7 +718,9 @@ function createCommandTask(sourceMessage, route, commandNumber, taskOffset, norm
     nextAction: route.nextAction,
     createdAt: new Date().toISOString(),
     category: route.category,
-    externalStatus: "extern nicht verbunden",
+    externalStatus: route.role === "COO_MANUS" ? MANUS_CONNECTOR_STATUS : "extern nicht verbunden",
+    manusTask: route.role === "COO_MANUS" ? createManusTaskModel(sourceMessage, sequence) : null,
+    manusReport: route.role === "COO_MANUS" ? createManusReportModel() : null,
     githubHandoffStatus: route.role === "CTO_CODEX" ? "draft" : undefined,
     githubIssue: null,
     githubReturnChannel: route.role === "CTO_CODEX" ? createGitHubReturnChannelStatus() : undefined,
@@ -753,6 +857,7 @@ function App() {
   const latestExecutiveSummary = latestDecision ? generateExecutiveSummary(latestDecision, commands.filter((task) => task.executiveDecisionId === latestDecision.id)) : "";
   const activeBoardChain = latestDecision?.boardFlow || createBoardExecutionChain([], false);
   const githubCapability = detectGitHubCapability();
+  const manusCapability = detectManusCapability();
   const latestCodexHandoff = latestCodexTask && latestCodexDecision ? createCodexHandoff(latestCodexTask, latestCodexDecision, { manusBriefing: latestManusBriefing, codexPrompt: latestCodexPrompt }) : null;
   const latestCodexHandoffText = formatCodexHandoff(latestCodexHandoff);
   const latestGitHubIssueDraft = latestCodexTask && latestCodexDecision ? createGitHubIssueDraft(latestCodexTask, latestCodexDecision, latestCodexHandoff, latestManusBriefing) : null;
@@ -1002,6 +1107,29 @@ function App() {
 
     setMessage("");
     setChat((old) => [...old, { role: "user", text: userMessage }]);
+    const conversationIntent = getConversationIntent(userMessage);
+
+    if (conversationIntent === "clarify") {
+      const clarification = "Was genau soll Manus prüfen oder vorbereiten? Formuliere bitte Ziel, Kontext und gewünschtes Ergebnis — dann erstelle ich den ManusTask.";
+      setChat((old) => [...old, { role: "jarvis", text: clarification, summary: clarification }]);
+      speak(clarification);
+      return;
+    }
+
+    if (conversationIntent === "status") {
+      const statusAnswer = generateStatusReply({ ceoStatus: ceoConnectionStatus, manusCapability });
+      setChat((old) => [...old, { role: "jarvis", text: statusAnswer, summary: statusAnswer }]);
+      speak(statusAnswer);
+      return;
+    }
+
+    if (conversationIntent === "conversation") {
+      const conversationalAnswer = generateConversationalCeoReply(userMessage);
+      setChat((old) => [...old, { role: "jarvis", text: conversationalAnswer, summary: conversationalAnswer }]);
+      speak(conversationalAnswer);
+      return;
+    }
+
     const executiveDecision = generateExecutiveDecision(userMessage, { decisionNumber: executiveDecisions.length + 1 });
     const draftedCommands = createCommandsFromDecision(userMessage, commands.length + 1, executiveDecision);
     setExecutiveDecisions((old) => [...old, executiveDecision]);
@@ -1346,20 +1474,21 @@ function App() {
 
         <div className="statusModule manusPanel">
           <p>COO Manus</p>
-          <strong>DELEGATION AKTIV</strong>
-          <small>Status: Delegation aktiv · Web Operator: vorbereitet · Externe Manus-Integration: nicht verbunden / Freigabe erforderlich · Ausführung: wartet auf menschliche Freigabe</small>
+          <strong>ChatGPT → Manus Bridge: {latestManusTask ? "task_prepared" : "bereit"}</strong>
+          <small>Manus Connector Status: {manusCapability.status} · Live senden: {manusCapability.canSendLive ? "nach GO möglich" : "disabled"} · Research-GO benötigt: {latestManusTask ? "ja" : "nein"}</small>
           {latestManusTask ? (
             <div className="manusDetails">
               <span>Letzter Task: {latestManusTask.title}</span>
-              <span>Status: {formatStatus(latestManusTask.status)} · {latestManusTask.externalStatus}</span>
-              <span>Briefing verfügbar: ja</span>
+              <span>Status: {latestManusTask.manusTask?.status || formatStatus(latestManusTask.status)} · Connector: {manusCapability.status}</span>
+              <span>ManusTask vorhanden: {latestManusTask.manusTask?.id || "nein"}</span>
+              <span>Research-GO benötigt: ja · Login-GO separat: ja · Action-GO separat: ja</span>
               <span>Web Research Task: {latestManusTask.webResearchTask?.id || "nicht erforderlich"}</span>
-              <span>Browser/Login: nur mit expliziter Freigabe · Externe Ausführung: nicht verbunden</span>
+              <span>Browser/Login: nur mit expliziter Freigabe · Live-Ausführung: {manusCapability.canSendLive ? "serverseitig vorbereitet" : "nicht verbunden"}</span>
               <details className="briefingBox">
                 <summary>Manus-Briefing anzeigen</summary>
-                <pre className="promptBox">{latestManusBriefing}</pre>
+                <pre className="promptBox">{JSON.stringify({ manusTask: latestManusTask.manusTask, briefing: latestManusBriefing, reportTemplate: latestManusTask.manusReport }, null, 2)}</pre>
               </details>
-              <button className="miniAction" onClick={() => copyToClipboard(latestManusBriefing, "Manus-Auftrag kopiert")}>
+              <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify({ manusTask: latestManusTask.manusTask, briefing: latestManusBriefing, reportTemplate: latestManusTask.manusReport }, null, 2), "Manus-Auftrag kopiert")}>
                 Manus-Auftrag kopieren
               </button>
               <button className="miniAction" onClick={() => markTask(latestManusTask.id, "approved_for_research")}>
@@ -1371,8 +1500,11 @@ function App() {
               <button className="miniAction" onClick={() => copyToClipboard(generateCodexPrompt(latestManusTask, latestManusDecision, { tasks: commands }), "Codex-Folgeauftrag aus Manus kopiert")}>
                 Codex-Folgeauftrag erzeugen/kopieren
               </button>
-              <button className="miniAction" disabled title={CONNECTION_STATUS.COO_MANUS.missing}>
-                Extern übergeben deaktiviert
+              <button className="miniAction" disabled={!manusCapability.canSendLive} title={manusCapability.missing || "Nur nach Research-GO"}>
+                Manus live senden{manusCapability.canSendLive ? " (nach GO)" : " disabled"}
+              </button>
+              <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify(latestManusTask.manusTask, null, 2), "ManusTask Handoff kopiert")}>
+                Copy/Handoff ManusTask
               </button>
               <small>{localApprovals[latestManusTask.id] ? "Status lokal geändert – keine externe Ausführung gestartet." : "Status: wartet auf Freigabe"}</small>
             </div>
@@ -1494,7 +1626,7 @@ function App() {
         <div className="statusModule taskStore">
           <p>Local Task Store</p>
           <strong>{CONNECTION_STATUS.LOCAL_TASK_STORE.status}</strong>
-          <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify({ executiveDecisions, boardChains: executiveDecisions.map((decision) => decision.boardFlow), commandTasks: commands, approvals: localApprovals }, null, 2), "Task State exportiert")}>Export Task State</button>
+          <button className="miniAction" onClick={() => copyToClipboard(JSON.stringify({ executiveDecisions, boardChains: executiveDecisions.map((decision) => decision.boardFlow), commandTasks: commands, approvals: localApprovals, manusCapability }, null, 2), "Task State exportiert")}>Export Task State</button>
           <button className="miniAction" onClick={() => { setCommands([]); setExecutiveDecisions([]); setLocalApprovals({}); localStorage.removeItem("jarvis.executiveDecisions"); localStorage.removeItem("jarvis.commandTasks"); localStorage.removeItem("jarvis.approvals"); }}>Clear Task State</button>
           <small>Speichert keine Secrets; nur lokale Board-/Task-/Approval-Daten.</small>
         </div>

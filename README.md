@@ -214,3 +214,9 @@ Der n8n Chat-Vertrag bleibt unverändert:
 
 - Frontend sendet `{ "chatInput": userMessage }`
 - Frontend liest `data.output`
+
+## Phase 3.0b – Conversational CEO + Manus Bridge
+
+Jarvis trennt normale CEO-Unterhaltung von klarer Delegation. Alltagsfragen erzeugen keine Executive Summary, keine Command-Bus-Aufgabe und keinen ManusTask. Klare Aufträge wie „GO Manus“, „recherchiere das“ oder „erstelle einen ManusTask“ erzeugen lokal eine CEO-Bewertung, einen Command-Bus-Task und ein ManusTask-Modell mit `task_prepared`.
+
+Der COO-Manus-Bereich zeigt den ChatGPT→Manus-Bridge-Status, den Manus Connector Status (`manus_live_connected` oder `needs_manus_connector`), Research-GO, Login-GO und Action-GO separat. Ohne sicheren serverseitigen Manus Connector bleibt „Manus live senden“ deaktiviert; Copy/Handoff bleibt verfügbar. Der n8n-Fallback-Vertrag bleibt unverändert: `{ chatInput: userMessage }` → `data.output`.
