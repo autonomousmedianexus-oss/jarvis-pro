@@ -89,3 +89,12 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - GitHub Capability Detection modelliert `connected`, `needs_secret`, `needs_connector`, `prepared`, `unavailable`, `failed` und zeigt bei fehlender Verbindung den Grund.
 - Echte GitHub Issue-/PR-Aktionen bleiben ohne sicheren serverseitigen/n8n/MCP-Connector deaktiviert.
 - n8n-Chat-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.
+
+## v1.8 / Phase 3.0a – GitHub Rückkanal + Codex PR Status
+
+- GitHub-Rückkanalmodell für Issue URL/Nummer, Branch, Commit SHA, PR URL/Nummer, PR Status, Checks, Review Status, Blocker, Aktualisierung und menschliche Freigabe ergänzt.
+- CTO Codex / GitHub Bereich zeigt Codex-PR-Status und nächste notwendige Freigabe sichtbar an.
+- Ohne sicheren serverseitigen GitHub Connector bleibt Live-Status ehrlich als `needs_secret`/`needs_connector` markiert; GitHub Live-Buttons bleiben deaktiviert.
+- Manuelle Copy/Paste-Statusübernahme ist lokal möglich, damit Codex-Arbeit an Jarvis zurückgemeldet werden kann, ohne Tokens im Browser zu speichern.
+- Keine Merge-/Deploy-Funktion und kein direkter GitHub Token im Frontend.
+- n8n-Chat-Vertrag bleibt stabil: Request `{ "chatInput": userMessage }`, Response `data.output`.

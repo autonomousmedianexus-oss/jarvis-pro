@@ -1301,3 +1301,70 @@ body {
     bottom: 0;
   }
 }
+
+.githubReturnChannel {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(250, 204, 21, 0.34);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.44);
+}
+
+.githubReturnChannel strong {
+  color: #fde68a;
+  margin: 0;
+}
+
+.connectorWarning {
+  color: #fbbf24 !important;
+}
+
+.connectorLive {
+  color: #86efac !important;
+}
+
+.githubStatusGrid,
+.manualStatusForm {
+  display: grid;
+  gap: 8px;
+}
+
+.githubStatusGrid span,
+.manualStatusForm label {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.52);
+  color: rgba(224, 251, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.githubStatusGrid b,
+.manualStatusForm label {
+  color: #93c5fd;
+}
+
+.manualStatusForm input {
+  width: 100%;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.82);
+  color: #e0f7ff;
+  padding: 8px;
+}
+
+.manualStatusForm .checkboxLine {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.manualStatusForm .checkboxLine input {
+  width: auto;
+}
