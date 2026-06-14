@@ -65,9 +65,9 @@ const MANUS_WEB_FORBIDDEN_ACTIONS = [
 const CONNECTION_STATUS = {
   CEO_CHATGPT: {
     component: "CEO ChatGPT / OpenAI",
-    status: "connected",
-    possible: "CEO-Entscheidung lokal erzeugen; n8n kann ChatGPT/OpenAI-Antworten liefern, wenn lokale Credentials in n8n gesetzt sind.",
-    missing: "Serverseitige OpenAI-Orchestrator-API außerhalb des bestehenden n8n-Chats ist nicht separat konfiguriert.",
+    status: "direct_ready",
+    possible: "CEO-Entscheidung lokal erzeugen; Direct Backend versucht /api/chatgpt zuerst und nutzt n8n nur als Fallback.",
+    missing: "OpenAI Direct benötigt serverseitig OPENAI_API_KEY, JARVIS_CHAT_PROVIDER=openai und JARVIS_CHAT_MODEL.",
     allowedAfterGo: "Strategische Bewertung, Priorisierung, Risiko- und Freigabeprüfung.",
     blocked: "Keine Secrets im Frontend; keine bindenden Aktionen ohne Owner-GO.",
   },
@@ -147,6 +147,13 @@ const TOOL_REGISTRY = [
   { name: "prepare_monetization_sprint", mode: "prepared" },
   { name: "export_research_task_state", mode: "local" },
 ];
+
+const CEO_CONNECTION_STATUS_LABELS = {
+  pending: "CEO ChatGPT: pending",
+  connected_direct: "CEO ChatGPT: connected_direct",
+  fallback_n8n: "CEO ChatGPT: fallback_n8n",
+  failed: "CEO ChatGPT: failed",
+};
 
 
 const GITHUB_RETURN_CHANNEL_DEFAULT = {
@@ -719,6 +726,7 @@ function App() {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [ceoConnectionStatus, setCeoConnectionStatus] = useState("pending");
   const [voiceStatus, setVoiceStatus] = useState("ready");
   const [ttsProvider, setTtsProvider] = useState("OpenAI");
   const [voiceFirst, setVoiceFirst] = useState(true);
@@ -800,6 +808,7 @@ function App() {
 
   const WEBHOOK_URL =
     "http://localhost:5678/webhook/929fb2f5-1f53-4f22-bf25-315d165f72f6";
+  const DIRECT_CHATGPT_URL = "/api/chatgpt";
 
   const speakWithBrowser = useCallback((text) => {
     if (!("speechSynthesis" in window) || !text) {
@@ -1002,19 +1011,39 @@ function App() {
     setLoading(true);
 
     try {
-      const response = await fetch(WEBHOOK_URL, {
+      let answer = "";
+      let ceoStatus = "connected_direct";
+
+      try {
+        const directResponse = await fetch(DIRECT_CHATGPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userMessage }),
+        });
+
+        if (!directResponse.ok) throw new Error(`Direct CEO ChatGPT unavailable: ${directResponse.status}`);
+        const directData = await directResponse.json();
+        answer = directData.output || "Keine Antwort erhalten.";
+        ceoStatus = directData.status || "connected_direct";
+      } catch {
+        const response = await fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatInput: userMessage }),
-      });
+        });
 
-      const data = await response.json();
-      const answer = data.output || "Keine Antwort erhalten.";
+        const data = await response.json();
+        answer = data.output || "Keine Antwort erhalten.";
+        ceoStatus = "fallback_n8n";
+      }
+
+      setCeoConnectionStatus(ceoStatus);
 
       setChat((old) => [...old, { role: "jarvis", text: answer, summary: createVisibleSummary(answer) }]);
       speak(answer);
     } catch (error) {
       console.error(error);
+      setCeoConnectionStatus("failed");
       setChat((old) => [
         ...old,
         { role: "jarvis", text: "Fehler: Verbindung zu Jarvis fehlgeschlagen." },
@@ -1133,6 +1162,7 @@ function App() {
             <span>NET ONLINE</span>
             <span>{time.toLocaleTimeString("de-CH")}</span>
             <span>VOICE {voiceStatusLabel.toUpperCase()}</span>
+            <span>{CEO_CONNECTION_STATUS_LABELS[ceoConnectionStatus].toUpperCase()}</span>
           </div>
 
           <h1>JARVIS PRO</h1>
@@ -1242,8 +1272,8 @@ function App() {
         </div>
         <div className="statusModule ceoLayer">
           <p>CEO ChatGPT Layer</p>
-          <strong>STRATEGIC CONTROL ACTIVE</strong>
-          <small>Jarvis → CEO ChatGPT → Command Bus → Agent Routing. CEO interpretiert, priorisiert und schützt Freigaben.</small>
+          <strong>{CEO_CONNECTION_STATUS_LABELS[ceoConnectionStatus]}</strong>
+          <small>Jarvis → /api/chatgpt → OpenAI zuerst. Bei Nichtverfügbarkeit bleibt der bestehende n8n-Fallback mit {`{ chatInput: userMessage }`} und data.output aktiv.</small>
           {latestDecision ? (
             <details className="briefingBox" open>
               <summary>Executive Summary anzeigen</summary>
