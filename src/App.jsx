@@ -418,8 +418,62 @@ function createManusTaskModel(sourceMessage, sequence) {
   };
 }
 
-function createManusReportModel() {
-  return { status: "pending", summary: "", findings: [], risks: [], recommendation: "", sourcesChecked: [], blockers: [], codexTaskDraft: "", approvalNeeded: true };
+function createManusReportModel(overrides = {}) {
+  return {
+    status: "pending",
+    summary: "",
+    findings: [],
+    risks: [],
+    recommendation: "",
+    sourcesChecked: [],
+    blockers: [],
+    codexTaskDraft: "",
+    approvalNeeded: true,
+    messagesStatus: "not_requested",
+    ...overrides,
+  };
+}
+
+function normalizeManusMessages(messages = []) {
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .map((message) => {
+      if (typeof message === "string") return message;
+      if (message?.content) return message.content;
+      if (message?.text) return message.text;
+      if (message?.status || message?.type) return `${message.type || "message"}: ${message.status || "received"}`;
+      return "";
+    })
+    .filter(Boolean);
+}
+
+function normalizeManusReportResponse(data = {}) {
+  const apiReport = data.report || {};
+  const messageFindings = normalizeManusMessages(data.messages);
+  const messagesStatus = apiReport.messagesStatus
+    || data.messagesStatus
+    || (messageFindings.length > 0 ? "received" : "not_requested");
+  const status = apiReport.status
+    || (data.status === MANUS_LIVE_STATUS.SENT ? MANUS_LIVE_STATUS.SENT : data.status)
+    || MANUS_LIVE_STATUS.REPORT;
+
+  return createManusReportModel({
+    ...apiReport,
+    status,
+    summary: apiReport.summary
+      || data.summary
+      || (data.manusTaskId ? "Manus task.create wurde übernommen." : "Manus Live Response wurde angenommen."),
+    findings: apiReport.findings?.length ? apiReport.findings : messageFindings,
+    risks: apiReport.risks?.length ? apiReport.risks : ["Externe Manus-Ergebnisse bleiben zu prüfen, bevor Folgeaktionen freigegeben werden."],
+    recommendation: apiReport.recommendation
+      || data.recommendation
+      || "ManusReport prüfen und nächstes menschliches GO entscheiden.",
+    sourcesChecked: apiReport.sourcesChecked?.length ? apiReport.sourcesChecked : ["Manus API Response"],
+    blockers: apiReport.blockers?.length ? apiReport.blockers : (data.taskUrl ? [] : ["Kein Manus-Link von API geliefert; Aufgabe in Manus Verlauf prüfen."]),
+    codexTaskDraft: apiReport.codexTaskDraft || "Codex-Folgeauftrag erst nach geprüftem ManusReport und Owner-GO erzeugen.",
+    approvalNeeded: apiReport.approvalNeeded ?? true,
+    messagesStatus,
+  });
 }
 
 function generateExecutiveDecision(sourceMessage, context = {}) {
@@ -1201,9 +1255,8 @@ function App() {
         return;
       }
 
-      const report = data.report || createManusReportModel();
-      const hasMessageReport = Array.isArray(data.messages) && data.messages.length > 0;
-      const finalStatus = data.status === MANUS_LIVE_STATUS.SENT && !hasMessageReport ? MANUS_LIVE_STATUS.SENT : (report.status || data.status || MANUS_LIVE_STATUS.REPORT);
+      const report = normalizeManusReportResponse(data);
+      const finalStatus = report.status || data.status || MANUS_LIVE_STATUS.REPORT;
       setCommands((old) => old.map((task) => task.id === latestManusTask.id
         ? { ...task, status: finalStatus, manusReport: report, manusTask: { ...task.manusTask, liveStatus: finalStatus, manusTaskId: data.manusTaskId || "", taskUrl: data.taskUrl || "" } }
         : task));
