@@ -128,3 +128,14 @@ Diese Datei hält die stabilen Projektstände von Jarvis Pro fest, damit Restore
 - `/api/manus/task` verwendet serverseitig `x-manus-api-key`; keine Secrets im Frontend.
 - COO Manus zeigt Connector, Research-GO, Live Send, Manus Task ID, Fehler und letzten Report.
 - Details liegen kompakt in expandierbaren Bereichen; 1366px-Laptop-Fokus bleibt auf dem Hauptchat.
+
+## Phase 3.1 – End-to-End Agent Chain
+
+- Manus `task_id` wird nach erfolgreichem `task.create` gespeichert und sichtbar angezeigt.
+- Serverseitiger Statusabruf für `task.listMessages?task_id=<task_id>` ergänzt; Header bleibt `x-manus-api-key` und Secrets bleiben serverseitig.
+- UI-Button „Manus Status abrufen“ ergänzt, inklusive letztem Abrufzeitpunkt und normalisiertem ManusReport.
+- CodexTaskDraft entsteht aus ManusReport, bleibt kopierbar und wartet auf explizites Codex-GO.
+- Codex-/GitHub-Live-Ausführung wird nicht vorgetäuscht: ohne Connector zeigt Jarvis `needs_codex_connector` beziehungsweise nicht verbunden und erlaubt manuelle Übergabe/Rückmeldung.
+- GitHub PR-Rückkanal zeigt PR URL, Nummer, Branch, Commit SHA, Checks, Changed Files, Blocker, Review und Aktualisierung.
+- Manus MCP/Browser-Operator-Erkennung ergänzt; fehlendes MCP ist kein Blocker.
+- n8n-Fallback bleibt unverändert: `{ chatInput: userMessage }` → `data.output`.

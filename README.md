@@ -242,3 +242,15 @@ Jarvis ist jetzt stärker auf den zentralen CEO-Chat fokussiert: normale Nachric
 Der Manus-Live-Proxy ruft bei gesetztem `MANUS_API_URL` und `MANUS_API_KEY` serverseitig `/api/manus/task` auf und sendet den Key ausschließlich als `x-manus-api-key`. Secrets werden nicht ins Frontend gegeben. Jarvis zeigt `sending_to_manus`, `task_sent`, `report_ready` oder `failed` mit Fehlertext, Manus Task ID, Link/Hinweis und strukturiertem ManusReport an.
 
 Details: [Phase 3.0d Dokumentation](docs/phase-3-0d-minimal-ui-manus-live-flow.md).
+
+## Phase 3.1 – End-to-End Agent Chain
+
+Phase 3.1 ergänzt den Funktionsrückkanal für die Agentenkette Inhaber → Jarvis → CEO ChatGPT → COO Manus → CTO Codex → GitHub PR → Manus Review → CEO Bewertung → Jarvis → Inhaber.
+
+- Manus `task.create` speichert die `task_id`, zeigt sie im COO-Manus-Panel und erlaubt `task.listMessages` per Button „Manus Status abrufen“.
+- ManusReport wird in Summary, Findings, Risiken, Empfehlung, geprüfte Quellen, Blocker, CodexTaskDraft, Approval-Bedarf und letzte Nachricht normalisiert.
+- Aus ManusReport entsteht ein kopierbarer CodexTaskDraft, aber Codex startet erst nach explizitem `GO Codex`, `Codex-GO`, `Übergib an Codex` oder `Starte Codex-Handoff`.
+- GitHub PR-Daten können ohne Frontend-Token manuell übernommen werden; ohne Connector bleibt der Live-Status ehrlich nicht verbunden.
+- Manus MCP/Browser-Operator wird serverseitig erkannt, ist aber kein Blocker.
+
+Details: [`docs/phase-3-1-end-to-end-agent-chain.md`](docs/phase-3-1-end-to-end-agent-chain.md)
