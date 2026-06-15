@@ -78,7 +78,15 @@ const MANUS_FORBIDDEN_ACTIONS = [
 ];
 
 function detectManusServerConnector(env) {
-  const connector = MANUS_CONNECTOR_ENV.find((item) => Boolean(env[item.key]));
+  const apiConfigured = Boolean(env.MANUS_API_KEY && env.MANUS_API_URL);
+  const connector = apiConfigured
+    ? { key: "MANUS_API_URL", type: "api" }
+    : MANUS_CONNECTOR_ENV.filter((item) => item.key !== "MANUS_API_URL").find((item) => Boolean(env[item.key]));
+  const mcpTools = [
+    env.MANUS_MCP_URL && "manus_mcp",
+    env.MANUS_BROWSER_OPERATOR_CONNECTOR_URL && "browser_operator",
+    env.N8N_MANUS_EXECUTION_WEBHOOK && "n8n_manus_execution",
+  ].filter(Boolean);
   return {
     status: connector ? "manus_live_connected" : "needs_manus_connector",
     connectorType: connector?.type || "none",
@@ -86,6 +94,9 @@ function detectManusServerConnector(env) {
     serverSideOnly: true,
     tokenInFrontend: false,
     checked: ["MANUS_API_KEY", ...MANUS_CONNECTOR_ENV.map((item) => item.key)],
+    mcpStatus: env.MANUS_MCP_URL || env.MANUS_BROWSER_OPERATOR_CONNECTOR_URL ? "manus_mcp_ready" : "manus_mcp_not_configured",
+    mcpTools,
+    safeConnectorValuesDetected: MANUS_CONNECTOR_ENV.filter((item) => Boolean(env[item.key])).map((item) => item.key),
   };
 }
 
@@ -183,20 +194,36 @@ async function fetchManusMessages(endpoint, headers, taskId) {
   return { status: "report_ready", httpStatus: response.status, raw: data, messages: data.messages || data.data || data.items || [] };
 }
 
+function messageText(message) {
+  if (!message) return "";
+  const content = message.content || message.text || message.message || message.output || "";
+  return typeof content === "string" ? content : JSON.stringify(content);
+}
+
+function parseListField(source, keys, fallback = []) {
+  for (const key of keys) {
+    if (Array.isArray(source?.[key])) return source[key];
+    if (typeof source?.[key] === "string" && source[key].trim()) return source[key].split(/\n|;|•|- /).map((item) => item.trim()).filter(Boolean);
+  }
+  return fallback;
+}
+
 function normalizeManusReport(data, messagesResult = null) {
   const source = data?.manusReport || data?.report || data || {};
   const messages = Array.isArray(messagesResult?.messages) ? messagesResult.messages : [];
+  const lastMessage = [...messages].reverse().map(messageText).find(Boolean) || "";
   const firstMessage = messages.find((message) => message?.content || message?.text || message?.message) || {};
   return {
     status: messagesResult?.status || source.status || "report_ready",
-    summary: source.summary || source.output || source.message || firstMessage.content || firstMessage.text || firstMessage.message || "Manus task.create wurde angenommen.",
-    findings: Array.isArray(source.findings) ? source.findings : messages.slice(0, 5).map((message) => message.content || message.text || message.message).filter(Boolean),
-    risks: Array.isArray(source.risks) ? source.risks : [],
-    recommendation: source.recommendation || "ManusReport prüfen und nächstes menschliches GO entscheiden.",
-    sourcesChecked: Array.isArray(source.sourcesChecked) ? source.sourcesChecked : [],
-    blockers: Array.isArray(source.blockers) ? source.blockers : [],
-    codexTaskDraft: source.codexTaskDraft || "",
-    approvalNeeded: source.approvalNeeded ?? true,
+    summary: source.summary || source.output || source.message || messageText(firstMessage) || lastMessage || "Manus task.create wurde angenommen.",
+    findings: parseListField(source, ["findings", "results"], messages.slice(0, 5).map(messageText).filter(Boolean)),
+    risks: parseListField(source, ["risks", "riskNotes"]),
+    recommendation: source.recommendation || source.nextStep || "ManusReport prüfen und nächstes menschliches GO entscheiden.",
+    sourcesChecked: parseListField(source, ["sourcesChecked", "sources", "checkedSources"]),
+    blockers: parseListField(source, ["blockers", "blockedBy"]),
+    codexTaskDraft: source.codexTaskDraft || source.codex_task_draft || "",
+    approvalNeeded: source.approvalNeeded ?? source.approval_needed ?? true,
+    lastMessage,
     messagesStatus: messagesResult?.status || "not_requested",
     messagesHttpStatus: messagesResult?.httpStatus || null,
   };
@@ -296,6 +323,34 @@ function jarvisManusDevProxy(env) {
         res.setHeader("Content-Type", "application/json");
         res.setHeader("Cache-Control", "no-store");
         res.end(JSON.stringify(detectManusServerConnector(env)));
+      });
+
+      server.middlewares.use("/api/manus/messages", async (req, res) => {
+        if (req.method !== "GET") {
+          res.statusCode = 405;
+          res.end("Method not allowed");
+          return;
+        }
+        const connector = detectManusServerConnector(env);
+        const taskId = new URL(req.url || "", "http://localhost").searchParams.get("task_id") || "";
+        if (!taskId) {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ status: "failed", errorMessage: "task_id is required" }));
+          return;
+        }
+        if (connector.connectorType !== "api" || !env.MANUS_API_KEY || !env.MANUS_API_URL) {
+          res.statusCode = 503;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ...createNeedsManusConnectorResponse(env), status: "needs_manus_connector" }));
+          return;
+        }
+        const headers = { "Content-Type": "application/json", "x-manus-api-key": env.MANUS_API_KEY };
+        const messagesResult = await fetchManusMessages(env.MANUS_API_URL, headers, taskId);
+        res.statusCode = messagesResult?.status === "failed" ? messagesResult.httpStatus : 200;
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(JSON.stringify({ ...messagesResult, task_id: taskId, report: normalizeManusReport({}, messagesResult), lastFetchedAt: new Date().toISOString() }));
       });
 
       server.middlewares.use("/api/manus/task", async (req, res) => {
